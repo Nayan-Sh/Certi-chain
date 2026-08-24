@@ -2,14 +2,191 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+
+    <!-- ═══════════════════════════════════════════
+         FAVICON & ICONS
+    ════════════════════════════════════════════ -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/pwa-192x192.png" />
+
+    <!-- ═══════════════════════════════════════════
+         VIEWPORT & PWA
+    ════════════════════════════════════════════ -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#0f172a" />
-    <title>CertifyChain</title>
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CertifyChain" />
+
+    <!-- ═══════════════════════════════════════════
+         PRIMARY SEO
+    ════════════════════════════════════════════ -->
+    <title>CertifyChain | Blockchain Certificate Verification System</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <meta name="description" content="CertifyChain uses blockchain technology and AI forensics to issue, verify, and protect certificates from fraud. Instant tamper-proof verification on the Ethereum blockchain." />
+    <meta name="keywords" content="blockchain certificate verification, tamper-proof certificate, fake certificate detector, AI certificate authentication, ethereum certificate, decentralized credential verification, digital diploma verification, certificate blockchain India" />
+    <meta name="author" content="CertifyChain" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://certifychain.app/" />
+
+    <!-- ═══════════════════════════════════════════
+         OPEN GRAPH (Facebook, LinkedIn, WhatsApp)
+    ════════════════════════════════════════════ -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://certifychain.app/" />
+    <meta property="og:title" content="CertifyChain | Blockchain Certificate Verification" />
+    <meta property="og:description" content="Issue and verify tamper-proof academic & professional certificates secured by Ethereum blockchain and AI forensic analysis. Instant, trustless, and fraud-proof." />
+    <meta property="og:image" content="https://certifychain.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="CertifyChain – Blockchain Certificate Verification Dashboard" />
+    <meta property="og:site_name" content="CertifyChain" />
+    <meta property="og:locale" content="en_IN" />
+
+    <!-- ═══════════════════════════════════════════
+         TWITTER / X CARD
+    ════════════════════════════════════════════ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@certifychain" />
+    <meta name="twitter:creator" content="@certifychain" />
+    <meta name="twitter:title" content="CertifyChain | Blockchain Certificate Verification" />
+    <meta name="twitter:description" content="Issue and verify tamper-proof certificates on Ethereum. Powered by AI forensic analysis. Free, instant, fraud-proof." />
+    <meta name="twitter:image" content="https://certifychain.app/og-image.png" />
+    <meta name="twitter:image:alt" content="CertifyChain dashboard showing certificate verification" />
+
+    <!-- ═══════════════════════════════════════════
+         SEARCH ENGINE VERIFICATION
+         Replace the content values with your actual
+         verification tokens from each platform.
+    ════════════════════════════════════════════ -->
+    <!-- <meta name="google-site-verification" content="YOUR_GOOGLE_VERIFICATION_TOKEN" /> -->
+    <!-- <meta name="msvalidate.01" content="YOUR_BING_VERIFICATION_TOKEN" /> -->
+
+    <!-- ═══════════════════════════════════════════
+         STRUCTURED DATA (JSON-LD)
+    ════════════════════════════════════════════ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "CertifyChain",
+      "url": "https://certifychain.app",
+      "description": "Blockchain-powered certificate issuance and AI-backed verification system. Issue tamper-proof credentials on Ethereum and verify authenticity instantly.",
+      "applicationCategory": "EducationalApplication",
+      "operatingSystem": "Web, Android, iOS",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "provider": {
+        "@type": "Organization",
+        "name": "CertifyChain",
+        "url": "https://certifychain.app"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- ═══════════════════════════════════════════
+         GDPR COOKIE CONSENT BANNER
+         Pure JS/CSS – completely independent of React.
+         Stores acceptance in localStorage.
+    ════════════════════════════════════════════ -->
+    <style>
+      #cc-banner {
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 99999;
+        background: rgba(2, 6, 23, 0.97);
+        border-top: 1px solid rgba(0, 242, 254, 0.25);
+        backdrop-filter: blur(12px);
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      #cc-banner.cc-visible { display: flex; }
+      #cc-banner p {
+        margin: 0;
+        font-size: 13px;
+        color: #94a3b8;
+        line-height: 1.6;
+        flex: 1;
+        min-width: 200px;
+      }
+      #cc-banner a {
+        color: #00f2fe;
+        text-decoration: underline;
+      }
+      #cc-accept {
+        background: linear-gradient(135deg, #00b4d8, #00f2fe);
+        color: #020617;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 22px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+        letter-spacing: 0.03em;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      #cc-accept:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0, 242, 254, 0.35);
+      }
+      #cc-decline {
+        background: transparent;
+        color: #64748b;
+        border: 1px solid rgba(100,116,139,0.3);
+        border-radius: 10px;
+        padding: 10px 18px;
+        font-size: 13px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+    </style>
+    <div id="cc-banner" role="dialog" aria-label="Cookie consent">
+      <p>
+        🍪 We use minimal cookies to keep you logged in and remember your preferences.
+        Read our <a href="/privacy-policy.html" target="_blank">Privacy Policy</a> and
+        <a href="/terms-of-service.html" target="_blank">Terms of Service</a>.
+      </p>
+      <div style="display:flex;gap:10px;flex-shrink:0">
+        <button id="cc-decline">Decline</button>
+        <button id="cc-accept">Accept &amp; Continue</button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var COOKIE_KEY = 'cc_consent_v1';
+        if (!localStorage.getItem(COOKIE_KEY)) {
+          document.getElementById('cc-banner').classList.add('cc-visible');
+        }
+        document.getElementById('cc-accept').addEventListener('click', function () {
+          localStorage.setItem(COOKIE_KEY, 'accepted');
+          document.getElementById('cc-banner').style.display = 'none';
+        });
+        document.getElementById('cc-decline').addEventListener('click', function () {
+          localStorage.setItem(COOKIE_KEY, 'declined');
+          document.getElementById('cc-banner').style.display = 'none';
+        });
+      })();
+    </script>
+
+    <!-- Google Identity Services for OAuth -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </body>
 </html>

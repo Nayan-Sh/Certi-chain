@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract Certificate {
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract Certificate is Ownable {
 
     struct Cert {
         string studentName;
@@ -10,11 +12,15 @@ contract Certificate {
         string ipfsHash;
         string fileHash;   // SHA-256 hash of the original PDF/file
         bool exists;
+        bool revoked;
     }
 
     mapping(string => Cert) public certificates;
 
     event CertificateIssued(string indexed id, string fileHash);
+    event CertificateRevoked(string indexed id);
+
+    constructor() Ownable(msg.sender) {}
 
     function issueCertificate(
         string memory _id,
@@ -23,7 +29,7 @@ contract Certificate {
         string memory _org,
         string memory _ipfsHash,
         string memory _fileHash
-    ) public {
+    ) public onlyOwner {
         require(!certificates[_id].exists, "Certificate already issued");
 
         certificates[_id] = Cert(
@@ -32,7 +38,8 @@ contract Certificate {
             _org,
             _ipfsHash,
             _fileHash,
-            true
+            true,
+            false
         );
 
         emit CertificateIssued(_id, _fileHash);
@@ -46,7 +53,7 @@ contract Certificate {
         string[] memory _orgs,
         string[] memory _ipfsHashes,
         string[] memory _fileHashes
-    ) public {
+    ) public onlyOwner {
         require(
             _ids.length == _names.length &&
             _ids.length == _courses.length &&
@@ -64,7 +71,8 @@ contract Certificate {
                     _orgs[i],
                     _ipfsHashes[i],
                     _fileHashes[i],
-                    true
+                    true,
+                    false
                 );
                 // We emit the event for each so indexers can still pick them up individually
                 emit CertificateIssued(_ids[i], _fileHashes[i]);
@@ -81,7 +89,8 @@ contract Certificate {
             string memory orgName,
             string memory ipfsHash,
             string memory fileHash,
-            bool exists
+            bool exists,
+            bool revoked
         )
     {
         Cert memory cert = certificates[_certId];
@@ -91,7 +100,20 @@ contract Certificate {
             cert.orgName,
             cert.ipfsHash,
             cert.fileHash,
-            cert.exists
+            cert.exists,
+            cert.revoked
         );
+    }
+
+    /**
+     * @dev Permanently flags a certificate as revoked on the ledger. Only the
+     * contract owner (the deploying admin wallet) may call this. The frontend
+     * signs this transaction directly in MetaMask — the backend never holds a key.
+     */
+    function revokeCertificate(string memory _id) public onlyOwner {
+        require(certificates[_id].exists, "Certificate not found");
+        require(!certificates[_id].revoked, "Certificate already revoked");
+        certificates[_id].revoked = true;
+        emit CertificateRevoked(_id);
     }
 }

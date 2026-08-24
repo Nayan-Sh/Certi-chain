@@ -1,0 +1,9 @@
+Flask
+Pillow
+pytesseract
+numpy
+fuzzywuzzy
+python-Levenshtein
+PyMuPDF
+python-dotenv
+google-genai

@@ -1,0 +1,11 @@
+# robots.txt for CertifyChain
+# https://certifychain.app
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://certifychain.app/sitemap.xml
+
+# Disallow admin/internal API paths if ever server-rendered
+Disallow: /api/

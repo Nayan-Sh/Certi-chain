@@ -61,4 +61,30 @@ describe("Certificate Contract — fileHash verification", function () {
     expect(result.exists).to.equal(false);
     expect(result.fileHash).to.equal("");
   });
+
+  it("revokes a certificate (owner only) and surfaces revoked=true", async function () {
+    await certificate.issueCertificate("CERT-REV", "Dan", "Cyber", "Org", "ipfs1", "hash1");
+
+    let result = await certificate.verifyCertificate("CERT-REV");
+    expect(result.revoked).to.equal(false);
+
+    await certificate.revokeCertificate("CERT-REV");
+
+    result = await certificate.verifyCertificate("CERT-REV");
+    expect(result.revoked).to.equal(true);
+  });
+
+  it("blocks non-owners from revoking", async function () {
+    await certificate.issueCertificate("CERT-REV2", "Eve", "Cyber", "Org", "ipfs1", "hash1");
+    const [, stranger] = await ethers.getSigners();
+    await expect(
+      certificate.connect(stranger).revokeCertificate("CERT-REV2")
+    ).to.be.revertedWithCustomError(certificate, "OwnableUnauthorizedAccount");
+  });
+
+  it("reverts revoking a certificate that was never issued", async function () {
+    await expect(certificate.revokeCertificate("CERT-NOPE")).to.be.revertedWith(
+      "Certificate not found"
+    );
+  });
 });

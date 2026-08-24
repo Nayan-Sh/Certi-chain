@@ -24,16 +24,21 @@ contract SoulboundCertificate is ERC721, Ownable {
 
     /**
      * Mints a new Soulbound Token to the student's wallet.
-     * Note: In a production app with a centralized backend, only the Owner (Admin/Backend)
-     * should call this, passing the verified student's address and the certificate ID.
+     * Browser-side signing: the student's own MetaMask wallet signs the claim
+     * (pays the gas), or the contract owner (admin) may mint on their behalf.
+     * The backend never holds a private key.
      */
-    function issueSBT(address student, string memory certificateId, string memory uri) public onlyOwner {
+    function issueSBT(address student, string memory certificateId, string memory uri) public {
+        require(
+            msg.sender == student || msg.sender == owner(),
+            "Only the student or contract owner can claim"
+        );
         require(!isClaimed[certificateId], "Certificate has already been claimed as an SBT");
-        
+
         uint256 tokenId = _nextTokenId++;
         _mint(student, tokenId);
         _tokenUris[tokenId] = uri;
-        
+
         isClaimed[certificateId] = true;
 
         emit CertificateClaimed(student, tokenId, certificateId);

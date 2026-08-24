@@ -1,16 +1,27 @@
-# React + Vite
+# CertifyChain — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite + Tailwind frontend for the certificate verification system. All blockchain writes are signed by the user's MetaMask wallet in the browser.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+npm run dev        # http://localhost:5173 (proxies /api to the backend on :5000)
+```
 
-## React Compiler
+## Key source files
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| File | Purpose |
+|---|---|
+| `src/App.jsx` | Main app, routing, and the mint / verify / revoke / SBT flows |
+| `src/ContractDeploy.jsx` | Admin panel that deploys contracts from MetaMask and registers addresses per-network |
+| `src/networks.js` | Chain metadata (Hardhat / Sepolia) for MetaMask switch/add |
+| `src/hooks/useWallet.js` | Shared wallet connection + `ensureNetwork()` |
+| `src/hooks/useContract.js` | Wallet-signed contract calls (`issue`, `batchIssue`, `revoke`, `issueSBT`) |
+| `src/api.js` | Axios client with JWT interceptor |
 
-## Expanding the ESLint configuration
+## Env
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Optional — `VITE_API_URL` overrides the backend URL (default `http://localhost:5000`). See `.env.example`.
+
+See the [root README](../README.md) for full setup, wallet, and network instructions.

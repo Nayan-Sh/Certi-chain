@@ -1,0 +1,26 @@
+{
+  "organizations": [
+    {
+      "name": "Test University",
+      "aliases": [
+        "Test University"
+      ],
+      "keywords": [
+        "test",
+        "university"
+      ],
+      "verify_hosts": []
+    },
+    {
+      "name": "New University",
+      "aliases": [
+        "New University"
+      ],
+      "keywords": [
+        "new",
+        "university"
+      ],
+      "verify_hosts": []
+    }
+  ]
+}

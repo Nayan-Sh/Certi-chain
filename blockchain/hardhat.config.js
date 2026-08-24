@@ -22,10 +22,6 @@ module.exports = {
     sepolia: {
       url: "https://ethereum-sepolia-rpc.publicnode.com",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
-    },
-    amoy: {
-      url: "https://rpc-amoy.polygon.technology",
-      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : []
     }
   }
 };

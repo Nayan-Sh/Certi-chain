@@ -1,21 +1,436 @@
 const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
 const Certificate = require("../models/Certificate");
+const { PDFDocument } = require("pdf-lib");
+
+const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
+const STAGING_DIR = path.join(UPLOAD_DIR, "staging");
+const STAGING_MAX_AGE_MS = 2 * 60 * 60 * 1000; // abandoned analyze sessions expire after 2h
 
 const { uploadToIPFS } = require("../services/ipfsService");
 const { analyzeWithAI } = require("../services/aiServices");
+const { generateCertificateIds } = require("../services/certificateIdService");
+const { sendCertificateEmail } = require("../services/certificateEmailService");
 const {
-    issueOnBlockchain,
-    batchIssueOnBlockchain,
     verifyOnBlockchain,
-    revokeOnBlockchain,
-    issueSBTOnBlockchain
+    verifyTxReceipt,
+    getCertificateContractInfo,
+    getSBTContractInfo
 } = require("../services/blockchainService");
 
 // ─────────────────────────────────────────────
-//  ISSUE
+//  SHARED BATCH HELPERS
 // ─────────────────────────────────────────────
-exports.issueCertificate = async (req, res) => {
+
+/**
+ * Validates a PDF file buffer for single-page requirement and corruption.
+ * Returns { isValid: boolean, pageCount: number, error: string|null }
+ */
+async function validateSinglePagePDF(fileBuffer) {
+    try {
+        const pdfDoc = await PDFDocument.load(fileBuffer);
+        const pageCount = pdfDoc.getPageCount();
+
+        if (pageCount !== 1) {
+            return {
+                isValid: false,
+                pageCount,
+                error: `PDF has ${pageCount} pages. Only single-page certificates are accepted.`
+            };
+        }
+
+        // Additional check: ensure PDF is not empty/corrupted
+        const firstPage = pdfDoc.getPage(0);
+        const { width, height } = firstPage.getSize();
+        if (width === 0 || height === 0) {
+            return {
+                isValid: false,
+                pageCount,
+                error: 'PDF page has zero dimensions (corrupted or empty).'
+            };
+        }
+
+        return { isValid: true, pageCount, error: null };
+    } catch (err) {
+        // Check if it's a corruption error
+        const errorMessage = err.message || String(err);
+        if (errorMessage.includes('Invalid PDF') ||
+            errorMessage.includes('corrupt') ||
+            errorMessage.includes('Missing') ||
+            errorMessage.includes('trailer') ||
+            errorMessage.includes('EOF')) {
+            return {
+                isValid: false,
+                pageCount: 0,
+                error: 'Could not read PDF file - file appears to be corrupted or not a valid PDF.'
+            };
+        }
+        return {
+            isValid: false,
+            pageCount: 0,
+            error: 'Could not read PDF file.'
+        };
+    }
+}
+
+/**
+ * Deletes analyze-batch staging sessions older than STAGING_MAX_AGE_MS.
+ * Runs opportunistically whenever a new batch is analyzed, so stale PDFs
+ * never accumulate on disk even if the admin abandons a review mid-flow.
+ */
+function sweepStaleBatches() {
+    try {
+        if (!fs.existsSync(STAGING_DIR)) return;
+        const now = Date.now();
+        for (const entry of fs.readdirSync(STAGING_DIR)) {
+            const dir = path.join(STAGING_DIR, entry);
+            try {
+                if (now - fs.statSync(dir).mtimeMs > STAGING_MAX_AGE_MS) {
+                    fs.rmSync(dir, { recursive: true, force: true });
+                }
+            } catch { /* already gone — ignore */ }
+        }
+    } catch { /* no staging dir — nothing to sweep */ }
+}
+
+/**
+ * Runs the AI forensic pipeline over an array of uploaded PDFs and returns:
+ *   results  — the per-file report shown in the UI (pass/reject + scores)
+ *   valid    — the certificates that passed, with AI-extracted metadata
+ *   rejectedCount
+ * Shared by the one-step batch-issue flow and the two-step
+ * analyze → review → mint flow, so both behave identically.
+ */
+async function analyzeFiles(files, metadata, orgName) {
+    const results = [];
+    const valid = [];
+    let rejectedCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const filePath = file.path;
+
+        // Validate mimetype
+        if (file.mimetype !== "application/pdf" && file.mimetype !== "application/x-pdf") {
+            results.push({
+                fileName: file.originalname,
+                studentName: file.originalname,
+                course: 'N/A',
+                fileHash: 'N/A',
+                status: 'INVALID_FORMAT',
+                error: 'Only PDF files are allowed.',
+                aiScore: 0,
+                aiDetails: {},
+                passed: false
+            });
+            rejectedCount++;
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            continue;
+        }
+
+        const fileBuffer = fs.readFileSync(filePath);
+        const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+
+        // Validate single page and corruption
+        const validation = await validateSinglePagePDF(fileBuffer);
+        if (!validation.isValid) {
+            results.push({
+                fileName: file.originalname,
+                studentName: file.originalname,
+                course: 'N/A',
+                fileHash,
+                status: 'INVALID_FORMAT',
+                error: validation.error,
+                aiScore: 0,
+                aiDetails: {},
+                passed: false
+            });
+            rejectedCount++;
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            continue;
+        }
+
+        // Only *user-provided* values are treated as ground truth for the AI
+        // comparison. Trimmed empty strings are sent to the AI service as-is,
+        // so it skips that field ("no expected value provided — skipping")
+        // instead of failing a valid certificate against a placeholder like
+        // 'N/A' or a filename-derived name.
+        const meta = metadata[i] || {};
+        const aiName = (meta.studentName || '').trim();
+        const aiCourse = (meta.course || '').trim();
+        const aiOrg = (meta.orgName || orgName || '').trim();
+
+        // Values that get RECORDED (DB + on-chain). When the admin did not
+        // provide metadata, these are overridden with AI-extracted fields
+        // after analysis.
+        let studentName = aiName || file.originalname.replace(/\.pdf$/i, '');
+        let course = aiCourse || 'N/A';
+        let certOrg = aiOrg || orgName || 'CertifyChain';
+
+        let aiResult = null;
+        try {
+            aiResult = await analyzeWithAI(filePath, {
+                studentName: aiName,
+                course: aiCourse,
+                orgName: aiOrg
+            });
+        } catch (aiErr) {
+            // Hard AI rejection (document is NOT a valid certificate) or the
+            // AI service was unreachable. `aiData` is only present when the
+            // AI service actively returned a 400; a thrown error without it
+            // is an AI-service/network failure.
+            const isHardReject = !!aiErr.aiData;
+            results.push({
+                fileName: file.originalname,
+                studentName,
+                course,
+                fileHash,
+                status: isHardReject ? 'AI_REJECTED' : 'AI_ERROR',
+                error: aiErr.message || 'AI analysis failed',
+                aiScore: 0,
+                aiDetails: aiErr.aiData?.details || {},
+                passed: false
+            });
+            rejectedCount++;
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            continue;
+        }
+
+        // SAFETY NET: a 200 response with a trust score of exactly 0 means the
+        // AI did NOT recognize the document as a certificate at all. Reject so
+        // a non-certificate can't slip through the lenient gate.
+        const docType = aiResult.details?.document_type || 'unknown';
+        const notCertificateForm = !['certificate', 'likely_certificate'].includes(docType);
+        if (aiResult.trust_score === 0 && notCertificateForm) {
+            results.push({
+                fileName: file.originalname,
+                studentName,
+                course,
+                fileHash,
+                status: 'AI_REJECTED',
+                aiScore: 0,
+                aiMessage: aiResult.message || 'Document is not a certificate form',
+                aiDetails: aiResult.details || {},
+                passed: false
+            });
+            rejectedCount++;
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            continue;
+        }
+
+        // USE AI-EXTRACTED FIELDS: when the admin did not provide per-file
+        // metadata, use the values the AI extracted from the PDF itself. The
+        // AI reads the certificate and populates the fields automatically.
+        const extracted = aiResult.details?.extracted_fields || {};
+        if (!aiName) studentName = extracted.student_name || studentName;
+        if (!aiCourse) course = extracted.course || course;
+        if (!aiOrg) certOrg = extracted.institution || certOrg;
+
+        results.push({
+            fileName: file.originalname,
+            studentName,
+            course,
+            fileHash,
+            status: 'AI_APPROVED',
+            aiScore: aiResult.trust_score,
+            aiMessage: aiResult.message || 'AI analysis completed',
+            aiDetails: aiResult.details || {},
+            passed: true
+        });
+        valid.push({ file, studentName, course, orgName: certOrg, fileHash, aiResult });
+    }
+
+    return { results, valid, rejectedCount };
+}
+
+/**
+ * Loads a previously-staged batch (token), applies the review-grid corrections,
+ * reserves certificate IDs and uploads each PDF to IPFS. Returns the full
+ * certificate records ready to be signed in the browser — it performs NO
+ * blockchain write and NO database write. The frontend signs the tx with
+ * MetaMask, then calls /record-mint to persist the records.
+ */
+async function prepareBatchMint(req, res) {
+    try {
+        const { token, certificates, orgName } = req.body;
+        if (!token) {
+            return res.status(400).json({ success: false, error: "NO_TOKEN", message: "Missing batch token." });
+        }
+
+        const stagingDir = path.join(STAGING_DIR, token);
+        const manifestPath = path.join(stagingDir, "manifest.json");
+        if (!fs.existsSync(manifestPath)) {
+            return res.status(404).json({
+                success: false,
+                error: "BATCH_EXPIRED",
+                message: "Batch session not found or expired. Please re-analyze the files."
+            });
+        }
+
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+        const corrections = Array.isArray(certificates) ? certificates : [];
+
+        // Apply review-grid corrections; fall back to the AI-extracted values
+        // recorded at analysis time for any field the admin left blank.
+        const reviewed = manifest.staged.map((s, i) => {
+            const c = corrections[i] || {};
+            return {
+                ...s,
+                studentName: (c.studentName || '').trim() || s.studentName,
+                course: (c.course || '').trim() || s.course,
+                orgName: (c.orgName || '').trim() || manifest.orgName || 'CertifyChain'
+            };
+        });
+
+        if (reviewed.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: "ALL_REJECTED",
+                message: "No certificates passed AI analysis."
+            });
+        }
+
+        // Reserve sequential IDs up-front so the batch gets a contiguous,
+        // human-friendly series (CERT-2026-000001, ...000002, ...).
+        const certIds = await generateCertificateIds(reviewed.length);
+        const records = [];
+
+        for (let i = 0; i < reviewed.length; i++) {
+            const vc = reviewed[i];
+            const fileBuffer = fs.readFileSync(vc.storedPath);
+            const ipfsResult = await uploadToIPFS(fileBuffer);
+            const ipfsHash = ipfsResult.cid; // Extract CID from {cid, isDemo}
+
+            records.push({
+                id: certIds[i],
+                studentName: vc.studentName,
+                course: vc.course,
+                orgName: vc.orgName,
+                hash: vc.fileHash,
+                ipfsHash,
+                aiScore: vc.aiResult.trust_score,
+                aiDetails: vc.aiResult.details || vc.aiResult
+            });
+        }
+
+        console.log(`[Prepare Batch] Prepared ${records.length} certificates for browser signing.`);
+
+        // Per-file report: prepared (approved) results first, then the rejects.
+        const results = reviewed.map((vc, i) => ({
+            fileName: vc.originalName,
+            studentName: vc.studentName,
+            course: vc.course,
+            fileHash: vc.fileHash,
+            status: 'AI_APPROVED',
+            aiScore: vc.aiResult.trust_score,
+            aiDetails: vc.aiResult.details || {},
+            passed: true,
+            certificateId: certIds[i],
+            ipfsHash: records[i].ipfsHash
+        }));
+        for (const r of manifest.results) {
+            if (!r.passed) results.push(r);
+        }
+
+        // The staged session is spent once prepared — remove files + manifest.
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+
+        res.json({
+            success: true,
+            totalFiles: manifest.results.length,
+            approvedCount: reviewed.length,
+            rejectedCount: manifest.rejectedCount || 0,
+            records,
+            results
+        });
+    } catch (err) {
+        console.error("[Prepare Batch] Error:", err);
+        res.status(500).json({ success: false, error: "PREPARE_ERROR", message: err.message });
+    }
+}
+
+/**
+ * After the admin signs the mint in MetaMask, records the on-chain mint in
+ * MongoDB. Validates the reported txHash against the real chain receipt first
+ * (status, target contract, signer) so a forged txHash can never produce a
+ * database record. Optionally emails the certificate to the student.
+ */
+async function recordMint(req, res) {
+    try {
+        const { txHash, chainId, adminAddress, records } = req.body;
+
+        if (!Array.isArray(records) || records.length === 0) {
+            return res.status(400).json({ success: false, error: "NO_RECORDS", message: "No certificate records provided." });
+        }
+        if (!txHash || !chainId) {
+            return res.status(400).json({ success: false, error: "INCOMPLETE", message: "txHash and chainId are required." });
+        }
+
+        // Confirm the reported tx really minted on the registered contract.
+        const { address: certAddress } = await getCertificateContractInfo(chainId);
+        await verifyTxReceipt(txHash, chainId, certAddress, adminAddress);
+
+        const networkId = Number(chainId);
+
+        // Find student user IDs for records that have studentEmail
+        const User = require("../models/User");
+        const studentEmails = records
+            .filter(r => r.studentEmail)
+            .map(r => r.studentEmail.trim().toLowerCase());
+
+        let studentMap = {};
+        if (studentEmails.length > 0) {
+            const students = await User.find({ email: { $in: studentEmails }, role: 'student' });
+            studentMap = Object.fromEntries(students.map(s => [s.email, s._id]));
+        }
+
+        const docs = records.map(r => ({
+            id: r.id,
+            studentName: r.studentName,
+            studentEmail: r.studentEmail || null,
+            studentId: r.studentEmail ? studentMap[r.studentEmail.trim().toLowerCase()] : null,
+            course: r.course,
+            orgName: r.orgName,
+            hash: r.hash,
+            ipfsHash: r.ipfsHash,
+            txHash,
+            chainId: networkId,
+            aiScore: r.aiScore,
+            aiDetails: r.aiDetails,
+            revoked: false,
+            issuedBy: req.user.id // Admin who issued this certificate
+        }));
+
+        await Certificate.insertMany(docs);
+
+        // Optional email — never blocks or fails issuance if delivery fails.
+        for (const r of records) {
+            if (r.studentEmail) {
+                await sendCertificateEmail({
+                    to: r.studentEmail.trim(),
+                    studentName: r.studentName,
+                    course: r.course,
+                    orgName: r.orgName,
+                    certId: r.id,
+                    txHash,
+                }).catch(err => console.error("[CertEmail] delivery failed:", err.message));
+            }
+        }
+
+        console.log(`[Record Mint] Recorded ${records.length} certificates. TX: ${txHash}`);
+
+        res.json({ success: true, mintedCount: records.length, txHash });
+    } catch (err) {
+        console.error("[Record Mint] Error:", err);
+        res.status(500).json({ success: false, error: "RECORD_ERROR", message: err.message });
+    }
+}
+
+// ─────────────────────────────────────────────
+//  PREPARE SINGLE (browser-signing step 1)
+// ─────────────────────────────────────────────
+exports.prepareSingle = async (req, res) => {
     try {
         const filePath = req.file.path;
         const fileBuffer = fs.readFileSync(filePath);
@@ -23,7 +438,19 @@ exports.issueCertificate = async (req, res) => {
         // 1️⃣ SHA-256 hash of the raw PDF bytes — this is what goes on-chain
         const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-        // 2️⃣ AI authenticity check — run BEFORE any blockchain writes
+        // 2️⃣ Format Validation - use shared validation function
+        if (req.file.mimetype !== "application/pdf" && req.file.mimetype !== "application/x-pdf") {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({ success: false, error: "INVALID_FORMAT", message: "Only PDF files are allowed." });
+        }
+
+        const validation = await validateSinglePagePDF(fileBuffer);
+        if (!validation.isValid) {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({ success: false, error: "INVALID_FORMAT", message: validation.error });
+        }
+
+        // 3️⃣ AI authenticity check — run BEFORE any signing
         const aiResult = await analyzeWithAI(filePath, {
             studentName: req.body.studentName,
             course: req.body.course,
@@ -33,130 +460,162 @@ exports.issueCertificate = async (req, res) => {
         // 🚫 GATE: Reject outright if AI trust score is too low
         if (aiResult.trust_score < 40) {
             fs.unlinkSync(filePath);
+            const rejectionMsg = aiResult.message || aiResult.details?.llm_forensic_report ||
+                `Upload rejected by AI forensic analysis. Trust Score: ${aiResult.trust_score}%.`;
             return res.status(403).json({
                 success: false,
                 error: "AI_REJECTED",
-                message: `Upload rejected by AI forensic analysis. Trust Score: ${aiResult.trust_score}%. The document could not be verified as a legitimate certificate.`,
+                message: rejectionMsg,
                 aiAnalysis: aiResult
             });
         }
 
         // 3️⃣ Upload file to IPFS (for decentralised storage / retrieval)
-        const ipfsHash = await uploadToIPFS(fileBuffer);
+        const ipfsResult = await uploadToIPFS(fileBuffer);
+        const ipfsHash = ipfsResult.cid; // Extract CID from {cid, isDemo}
 
-        // 4️⃣ Store on blockchain: ID + metadata + IPFS ref + file hash
-        const txHash = await issueOnBlockchain(
-            req.body.id,
-            req.body.studentName,
-            req.body.course,
-            req.body.orgName,
-            ipfsHash,
-            fileHash
-        );
+        // 4️⃣ Reserve a sequential, human-friendly certificate ID
+        const [certId] = await generateCertificateIds(1);
 
-        // 5️⃣ Save metadata in MongoDB (mirror of on-chain data + AI results)
-        const certificate = await Certificate.create({
-            id: req.body.id,
-            studentName: req.body.studentName,
-            course: req.body.course,
-            orgName: req.body.orgName,
-            hash: fileHash,
-            ipfsHash,
-            txHash,
-            aiScore: aiResult.trust_score,
-            aiDetails: aiResult.details,
-            revoked: false
-        });
-
+        // The uploaded file is spent (IPFS has the bytes) — clean it up.
         fs.unlinkSync(filePath);
 
+        console.log(`[Prepare Single] Prepared ${certId} for browser signing.`);
+
+        // No blockchain write here — the admin signs the mint in MetaMask, then
+        // the frontend calls /record-mint with these records + the txHash.
         res.json({
             success: true,
-            certificate,
+            record: {
+                id: certId,
+                studentName: req.body.studentName,
+                studentEmail: req.body.studentEmail || null,
+                course: req.body.course,
+                orgName: req.body.orgName,
+                hash: fileHash,
+                ipfsHash,
+                aiScore: aiResult.trust_score,
+                aiDetails: aiResult.details
+            },
             fileHash,
-            txHash,
             aiAnalysis: aiResult
         });
     } catch (err) {
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        if (err.aiData) {
+            // AI service rejected the document — pass through full analysis data
+            return res.status(400).json({
+                success: false,
+                error: err.aiData.error || "AI_VALIDATION_FAILED",
+                message: err.message,
+                details: err.aiData.details,
+                aiAnalysis: {
+                    trust_score: err.aiData.trust_score ?? 0,
+                    is_safe: false,
+                    message: err.aiData.message || err.message,
+                    details: err.aiData.details || {},
+                }
+            });
+        }
+
         res.status(500).json({ error: err.message });
     }
 };
 
 // ─────────────────────────────────────────────
-//  BATCH ISSUE (HACKATHON UPGRADE)
+//  PREPARE BATCH MINT (browser-signing step 1)
 // ─────────────────────────────────────────────
-exports.batchIssueCertificates = async (req, res) => {
+exports.prepareBatchMint = prepareBatchMint;
+
+// ─────────────────────────────────────────────
+//  RECORD MINT (browser-signing step 2)
+// ─────────────────────────────────────────────
+exports.recordMint = recordMint;
+
+// ─────────────────────────────────────────────
+//  ANALYZE BATCH (two-step: analyze → review → mint)
+// ─────────────────────────────────────────────
+exports.analyzeBatch = async (req, res) => {
+    const uploadedPaths = [];
     try {
-        const { certificates } = req.body; // Array of objects: { id, studentName, course, orgName, pdfUrl/base64 (mocked for this hackathon demo) }
-        
-        if (!certificates || !Array.isArray(certificates) || certificates.length === 0) {
-            return res.status(400).json({ error: "Invalid array of certificates provided." });
+        const files = req.files;
+        let metadata = [];
+        try {
+            metadata = JSON.parse(req.body.metadata || "[]");
+        } catch {
+            metadata = [];
         }
 
-        console.log(`[Batch Issue] Starting batch minting for ${certificates.length} certificates...`);
-
-        // Prepare arrays for the smart contract
-        const ids = [];
-        const names = [];
-        const courses = [];
-        const orgs = [];
-        const ipfsHashes = [];
-        const fileHashes = [];
-        const dbRecords = [];
-
-        // 1. Process each certificate (Simulating file upload & hashing for the batch demo)
-        for (const cert of certificates) {
-            const { id, studentName, course, orgName } = cert;
-            
-            // For a real batch upload, you'd process real files or generated PDFs here.
-            // For this UI demo, we simulate a PDF file buffer based on the student's name.
-            const simulatedBuffer = Buffer.from(`Simulated PDF content for ${studentName} - ${course} ID: ${id}`);
-            const fileHash = crypto.createHash("sha256").update(simulatedBuffer).digest("hex");
-            
-            // Skip the slow AI check on batch uploads to simulate "Trusted Enterprise Status", 
-            // but still upload them to IPFS to get decentralized CIDs!
-            const ipfsHash = await uploadToIPFS(simulatedBuffer);
-
-            ids.push(id);
-            names.push(studentName);
-            courses.push(course);
-            orgs.push(orgName);
-            ipfsHashes.push(ipfsHash);
-            fileHashes.push(fileHash);
-
-            dbRecords.push({
-                id,
-                studentName,
-                course,
-                orgName,
-                hash: fileHash,
-                ipfsHash,
-                aiScore: 100, // Trusted Enterprise Batch implies 100 score
-                aiDetails: { notes: "Batch Issued — Trusted Enterprise Origin" },
-                revoked: false
+        if (!files || files.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: "NO_FILES",
+                message: "Please upload at least one PDF certificate file."
             });
         }
 
-        // 2. Batch Mint to Blockchain
-        console.log("[Batch Issue] Waiting for blockchain transaction...");
-        const txHash = await batchIssueOnBlockchain(ids, names, courses, orgs, ipfsHashes, fileHashes);
-        
-        // 3. Save to MongoDB
-        const recordsWithTx = dbRecords.map(doc => ({ ...doc, txHash }));
-        await Certificate.insertMany(recordsWithTx);
+        // Opportunistically clear abandoned staging sessions
+        sweepStaleBatches();
 
-        console.log(`[Batch Issue] Successfully minted! TX: ${txHash}`);
+        const token = crypto.randomBytes(16).toString("hex");
+        const stagingDir = path.join(STAGING_DIR, token);
+        fs.mkdirSync(stagingDir, { recursive: true });
+
+        console.log(`[Analyze Batch] Analyzing ${files.length} PDF certificates...`);
+        uploadedPaths.push(...files.map(f => f.path));
+
+        const { results, valid, rejectedCount } = await analyzeFiles(files, metadata, req.body.orgName);
+
+        // Stage the approved files for the upcoming mint step, carrying the
+        // AI-extracted metadata so corrections fall back to them.
+        const staged = valid.map((vc, i) => ({
+            originalName: vc.file.originalname,
+            storedPath: path.join(stagingDir, `${i}-${crypto.randomBytes(4).toString("hex")}.pdf`),
+            fileHash: vc.fileHash,
+            aiResult: vc.aiResult,
+            studentName: vc.studentName,
+            course: vc.course,
+            orgName: vc.orgName
+        }));
+        for (let i = 0; i < valid.length; i++) {
+            fs.copyFileSync(valid[i].file.path, staged[i].storedPath);
+        }
+
+        fs.writeFileSync(
+            path.join(stagingDir, "manifest.json"),
+            JSON.stringify({ orgName: req.body.orgName || '', results, staged, rejectedCount }, null, 2)
+        );
+
+        // Uploaded originals are no longer needed — staged copies exist
+        for (const p of uploadedPaths) {
+            if (fs.existsSync(p)) {
+                try { fs.unlinkSync(p); } catch {}
+            }
+        }
 
         res.json({
             success: true,
-            mintedCount: certificates.length,
-            txHash,
-            certificates: recordsWithTx
+            token,
+            totalFiles: files.length,
+            approvedCount: valid.length,
+            rejectedCount,
+            results
         });
-
     } catch (err) {
-        console.error("[Batch Issue] Error:", err);
-        res.status(500).json({ error: err.message });
+        console.error("[Analyze Batch] Error:", err);
+        for (const p of uploadedPaths) {
+            if (fs.existsSync(p)) {
+                try { fs.unlinkSync(p); } catch {}
+            }
+        }
+        res.status(500).json({
+            success: false,
+            error: "ANALYZE_ERROR",
+            message: err.message
+        });
     }
 };
 
@@ -168,8 +627,13 @@ exports.verifyCertificate = async (req, res) => {
         const certId = req.params.id;
         const submittedFileHash = req.query.fileHash || null;
 
-        // 1️⃣ Fetch from blockchain
-        const data = await verifyOnBlockchain(certId);
+        // The DB record knows which network this cert was minted on; fall back
+        // to Sepolia when no record exists.
+        const dbCert = await Certificate.findOne({ id: certId });
+        const chainId = (dbCert && dbCert.chainId) || 11155111;
+
+        // 1️⃣ Fetch from blockchain (on the cert's network)
+        const data = await verifyOnBlockchain(certId, chainId);
 
         if (!data.exists) {
             return res.status(404).json({
@@ -184,16 +648,15 @@ exports.verifyCertificate = async (req, res) => {
             hashMatch = (submittedFileHash.toLowerCase() === data.fileHash.toLowerCase());
         }
 
-        // 3️⃣ Fetch AI details from MongoDB (stored at issuance time)
-        const dbCert = await Certificate.findOne({ id: certId });
-
-        // 4️⃣ Overall verdict
-        const verified = hashMatch !== false;
+        // 3️⃣ Overall verdict. Revocation is authoritative from the chain — a
+        //    revoked cert shows red regardless of the DB flag.
+        const verified = hashMatch !== false && !data.revoked;
 
         res.json({
             verified,
             hashMatch,
             id:                certId,
+            chainId,           // the network this cert was minted on — used by the SBT claim + explorer links
             storedFileHash:    data.fileHash,
             submittedFileHash,
             studentName:       data.studentName,
@@ -201,7 +664,7 @@ exports.verifyCertificate = async (req, res) => {
             orgName:           data.orgName,
             ipfsHash:          data.ipfsHash,
             txHash:            dbCert ? dbCert.txHash : null,
-            revoked:           dbCert ? dbCert.revoked : false,
+            revoked:           data.revoked,
             issuedAt:          dbCert ? dbCert.createdAt : null,
             aiScore:           dbCert ? dbCert.aiScore : null,
             aiDetails:         dbCert ? dbCert.aiDetails : null
@@ -212,18 +675,26 @@ exports.verifyCertificate = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-//  REVOKE
+//  RECORD REVOKE (browser-signed on-chain revoke)
 // ─────────────────────────────────────────────
-exports.revokeCertificate = async (req, res) => {
+exports.recordRevoke = async (req, res) => {
     try {
-        const { id } = req.body;
+        const { txHash, chainId, id, adminAddress } = req.body;
         if (!id) return res.status(400).json({ error: "Certificate ID required" });
+        if (!txHash || !chainId) {
+            return res.status(400).json({ error: "txHash and chainId are required" });
+        }
 
-        // Mark as revoked in MongoDB for dashboard stats
+        // Confirm the reported tx really revoked on the registered contract.
+        const { address: certAddress } = await getCertificateContractInfo(chainId);
+        await verifyTxReceipt(txHash, chainId, certAddress, adminAddress);
+
+        // Mark as revoked in MongoDB for dashboard stats + audit.
         await Certificate.updateOne({ id }, { revoked: true });
 
-        res.json({ revoked: true, id });
+        res.json({ success: true, revoked: true, id, txHash });
     } catch (err) {
+        console.error("[Record Revoke] Error:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -246,13 +717,132 @@ exports.getStats = async (req, res) => {
         ]);
         const avgAiScore = scoreAgg.length > 0 ? Math.round(scoreAgg[0].avg) : 0;
 
+        // Unique partner institutions (distinct orgNames)
+        const partnerInstitutions = await Certificate.distinct("orgName");
+        const partnerCount = partnerInstitutions.filter(Boolean).length;
+
+        // Unique students onboarded (distinct studentName + course combination)
+        const studentsOnboarded = await Certificate.distinct("studentName");
+        const studentCount = studentsOnboarded.filter(Boolean).length;
+
+        // Fraud prevention rate: percentage of certificates with high trust score (>=80)
+        const highTrustCount = await Certificate.countDocuments({ aiScore: { $gte: 80 } });
+        const fraudPreventionRate = total > 0 ? ((highTrustCount / total) * 100).toFixed(1) : 0;
+
         // Recent 5 certificates
         const recent = await Certificate.find()
             .sort({ createdAt: -1 })
             .limit(5)
             .select("id studentName course orgName aiScore createdAt revoked");
 
-        res.json({ total, revoked, issuedToday, avgAiScore, recent });
+        res.json({
+            total,
+            revoked,
+            issuedToday,
+            avgAiScore,
+            recent,
+            partnerInstitutions: partnerCount,
+            studentsOnboarded: studentCount,
+            fraudPreventionRate: parseFloat(fraudPreventionRate)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────
+//  ADMIN STATS (per-admin dashboard)
+// ─────────────────────────────────────────────
+exports.getAdminStats = async (req, res) => {
+    try {
+        const adminId = req.user.id; // Admin who is logged in
+
+        const total   = await Certificate.countDocuments({ issuedBy: adminId });
+        const revoked = await Certificate.countDocuments({ issuedBy: adminId, revoked: true });
+
+        // "Issued today" = documents created in the last 24h by this admin
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const issuedToday = await Certificate.countDocuments({ issuedBy: adminId, createdAt: { $gte: since } });
+
+        // Average AI trust score for this admin's certificates
+        const scoreAgg = await Certificate.aggregate([
+            { $match: { issuedBy: adminId, aiScore: { $exists: true, $ne: null } } },
+            { $group: { _id: null, avg: { $avg: "$aiScore" } } }
+        ]);
+        const avgAiScore = scoreAgg.length > 0 ? Math.round(scoreAgg[0].avg) : 0;
+
+        // Unique partner institutions (distinct orgNames) for this admin
+        const partnerInstitutions = await Certificate.distinct("orgName", { issuedBy: adminId });
+        const partnerCount = partnerInstitutions.filter(Boolean).length;
+
+        // Unique students onboarded (distinct studentName) for this admin
+        const studentsOnboarded = await Certificate.distinct("studentName", { issuedBy: adminId });
+        const studentCount = studentsOnboarded.filter(Boolean).length;
+
+        // Fraud prevention rate: percentage of certificates with high trust score (>=80)
+        const highTrustCount = await Certificate.countDocuments({ issuedBy: adminId, aiScore: { $gte: 80 } });
+        const fraudPreventionRate = total > 0 ? ((highTrustCount / total) * 100).toFixed(1) : 0;
+
+        // Recent 5 certificates issued by this admin
+        const recent = await Certificate.find({ issuedBy: adminId })
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .select("id studentName course orgName aiScore createdAt revoked");
+
+        res.json({
+            total,
+            revoked,
+            issuedToday,
+            avgAiScore,
+            recent,
+            partnerInstitutions: partnerCount,
+            studentsOnboarded: studentCount,
+            fraudPreventionRate: parseFloat(fraudPreventionRate)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ─────────────────────────────────────────────
+//  STUDENT STATS (per-student dashboard)
+// ─────────────────────────────────────────────
+exports.getStudentStats = async (req, res) => {
+    try {
+        const studentId = req.user.id; // Student who is logged in
+
+        const total   = await Certificate.countDocuments({ studentId });
+        const revoked = await Certificate.countDocuments({ studentId, revoked: true });
+
+        // Recent 10 certificates for this student
+        const recent = await Certificate.find({ studentId })
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .select("id studentName course orgName aiScore createdAt revoked txHash sbtTxHash chainId ipfsHash");
+
+        // Average AI trust score
+        const scoreAgg = await Certificate.aggregate([
+            { $match: { studentId, aiScore: { $exists: true, $ne: null } } },
+            { $group: { _id: null, avg: { $avg: "$aiScore" } } }
+        ]);
+        const avgAiScore = scoreAgg.length > 0 ? Math.round(scoreAgg[0].avg) : 0;
+
+        // Unique courses
+        const courses = await Certificate.distinct("course", { studentId });
+        const courseCount = courses.filter(Boolean).length;
+
+        // Unique institutions
+        const institutions = await Certificate.distinct("orgName", { studentId });
+        const institutionCount = institutions.filter(Boolean).length;
+
+        res.json({
+            total,
+            revoked,
+            avgAiScore,
+            recent,
+            courses: courseCount,
+            institutions: institutionCount
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -271,18 +861,22 @@ exports.clearAll = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
-//  SBT (SOULBOUND NFT) CLAIM
+//  RECORD CLAIM SBT (browser-signed student claim)
 // ─────────────────────────────────────────────
-exports.claimSBT = async (req, res) => {
+exports.recordClaimSBT = async (req, res) => {
     try {
-        const { studentAddress, certId, ipfsHash } = req.body;
-        
-        if (!studentAddress || !certId || !ipfsHash) {
+        const { txHash, chainId, certId, studentAddress } = req.body;
+
+        if (!studentAddress || !certId || !txHash || !chainId) {
             return res.status(400).json({ error: "Missing required fields for NFT claim." });
         }
 
-        // Must run on the backend to use the Admin's protocol wallet gas funds
-        const txHash = await issueSBTOnBlockchain(studentAddress, certId, ipfsHash);
+        // Confirm the reported tx really minted the SBT on the SBT contract.
+        const { address: sbtAddress } = await getSBTContractInfo(chainId);
+        await verifyTxReceipt(txHash, chainId, sbtAddress, studentAddress);
+
+        // Mirror the claim in MongoDB (soulbound NFT is already on-chain).
+        await Certificate.updateOne({ id: certId }, { sbtTxHash: txHash });
 
         res.json({
             success: true,
@@ -290,7 +884,7 @@ exports.claimSBT = async (req, res) => {
             txHash
         });
     } catch (err) {
-        console.error("[SBT Claim] Error:", err);
+        console.error("[Record SBT Claim] Error:", err);
         res.status(500).json({ error: err.message });
     }
 };

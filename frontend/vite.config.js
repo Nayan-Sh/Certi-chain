@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    tailwindcss(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -33,5 +35,18 @@ export default defineConfig({
       }
     })
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+    // SPA fallback: any unknown route (e.g. /dashboard, /verify) is served
+    // index.html so React Router can handle client-side navigation on refresh.
+    historyApiFallback: true,
+  },
+  appType: 'spa', // Ensures Vite serves index.html for all unmatched routes in preview too
 })
 

@@ -4,7 +4,7 @@ const FormData = require("form-data");
 
 /**
  * Uploads a file buffer to IPFS via Pinata.
- * Returns the actual decentralized IPFS CID.
+ * Returns the actual decentralized IPFS CID and a flag indicating demo mode.
  */
 async function uploadToIPFS(fileBuffer) {
     if (!process.env.PINATA_API_KEY || !process.env.PINATA_API_SECRET) {
@@ -21,7 +21,7 @@ async function uploadToIPFS(fileBuffer) {
         }
         const fakeCID = "Qm" + fakeHash;
         console.log(`[IPFS] Generated demo CID: ${fakeCID}`);
-        return fakeCID;
+        return { cid: fakeCID, isDemo: true };
     }
 
     try {
@@ -35,9 +35,9 @@ async function uploadToIPFS(fileBuffer) {
                 pinata_secret_api_key: process.env.PINATA_API_SECRET,
             },
         });
-        
+
         console.log(`[IPFS] Successfully pinned via Pinata! CID: ${response.data.IpfsHash}`);
-        return response.data.IpfsHash;
+        return { cid: response.data.IpfsHash, isDemo: false };
     } catch (error) {
         console.error("[IPFS] Error uploading to Pinata:", error.response?.data || error.message);
         throw new Error("Failed to upload to IPFS. Check Pinata API keys.");
