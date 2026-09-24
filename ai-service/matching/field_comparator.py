@@ -8,7 +8,7 @@ OCR-tolerant thresholds, and critical vs non-critical field classification.
 import logging
 import re
 
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
 
 from matching.ocr_normalizer import fuzzy_field_match, normalize_name_for_comparison
 

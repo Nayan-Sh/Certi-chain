@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
+import ErrorBoundary from './components/layout/ErrorBoundary'
 import { registerSW } from 'virtual:pwa-register'
 
 registerSW({ immediate: true })
@@ -10,7 +11,9 @@ registerSW({ immediate: true })
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </BrowserRouter>
   </StrictMode>,
 )

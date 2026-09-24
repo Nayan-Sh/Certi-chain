@@ -5,7 +5,6 @@ const jwt = require('jsonwebtoken');
 // attaches `req.user = { id, email, role, ... }`. Chain this BEFORE any
 // route that needs a logged-in user.
 const authMiddleware = (req, res, next) => {
-  console.log('[DEBUG authMiddleware] path:', req.path, 'method:', req.method);
   const authHeader = req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided. Authorization denied.' });
@@ -15,10 +14,8 @@ const authMiddleware = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded; // { id, email, role, iat, exp }
-    console.log('[DEBUG authMiddleware] user:', req.user);
     next();
   } catch (err) {
-    console.log('[DEBUG authMiddleware] error:', err.message);
     res.status(401).json({ error: 'Invalid or expired token.' });
   }
 };

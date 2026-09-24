@@ -20,13 +20,17 @@ const NETWORKS = {
 };
 
 /**
- * Resolve a network entry by chainId. Falls back to Sepolia so the
- * service still boots when chainId is unknown/absent.
+ * Resolve a network entry by chainId. Unknown chain IDs are rejected
+ * instead of silently falling back to Sepolia.
  * @param {number|string} chainId
  */
 function getNetwork(chainId) {
     const id = Number(chainId);
-    return NETWORKS[id] || NETWORKS[11155111];
+    const net = NETWORKS[id];
+    if (!net) {
+        throw new Error(`Unsupported network: ${chainId}`);
+    }
+    return net;
 }
 
 module.exports = { NETWORKS, getNetwork };

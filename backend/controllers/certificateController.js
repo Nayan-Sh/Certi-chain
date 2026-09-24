@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const Certificate = require("../models/Certificate");
-const { PDFDocument } = require("pdf-lib");
+const { validateSinglePagePDF } = require("../middleware/uploadMiddleware");
 
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
 const STAGING_DIR = path.join(UPLOAD_DIR, "staging");
@@ -22,57 +22,6 @@ const {
 // ─────────────────────────────────────────────
 //  SHARED BATCH HELPERS
 // ─────────────────────────────────────────────
-
-/**
- * Validates a PDF file buffer for single-page requirement and corruption.
- * Returns { isValid: boolean, pageCount: number, error: string|null }
- */
-async function validateSinglePagePDF(fileBuffer) {
-    try {
-        const pdfDoc = await PDFDocument.load(fileBuffer);
-        const pageCount = pdfDoc.getPageCount();
-
-        if (pageCount !== 1) {
-            return {
-                isValid: false,
-                pageCount,
-                error: `PDF has ${pageCount} pages. Only single-page certificates are accepted.`
-            };
-        }
-
-        // Additional check: ensure PDF is not empty/corrupted
-        const firstPage = pdfDoc.getPage(0);
-        const { width, height } = firstPage.getSize();
-        if (width === 0 || height === 0) {
-            return {
-                isValid: false,
-                pageCount,
-                error: 'PDF page has zero dimensions (corrupted or empty).'
-            };
-        }
-
-        return { isValid: true, pageCount, error: null };
-    } catch (err) {
-        // Check if it's a corruption error
-        const errorMessage = err.message || String(err);
-        if (errorMessage.includes('Invalid PDF') ||
-            errorMessage.includes('corrupt') ||
-            errorMessage.includes('Missing') ||
-            errorMessage.includes('trailer') ||
-            errorMessage.includes('EOF')) {
-            return {
-                isValid: false,
-                pageCount: 0,
-                error: 'Could not read PDF file - file appears to be corrupted or not a valid PDF.'
-            };
-        }
-        return {
-            isValid: false,
-            pageCount: 0,
-            error: 'Could not read PDF file.'
-        };
-    }
-}
 
 /**
  * Deletes analyze-batch staging sessions older than STAGING_MAX_AGE_MS.
@@ -112,7 +61,7 @@ async function analyzeFiles(files, metadata, orgName) {
         const filePath = file.path;
 
         // Validate mimetype
-        if (file.mimetype !== "application/pdf" && file.mimetype !== "application/x-pdf") {
+        if (file.mimetype !== "application/pdf" && file.mimetype !== "application/x-pdf" && file.mimetype !== "application/octet-stream") {
             results.push({
                 fileName: file.originalname,
                 studentName: file.originalname,
@@ -296,11 +245,17 @@ async function prepareBatchMint(req, res) {
         const certIds = await generateCertificateIds(reviewed.length);
         const records = [];
 
+        // Parallelize IPFS uploads for speed (#2 fix)
+        const ipfsResults = await Promise.all(
+            reviewed.map(vc => {
+                const fileBuffer = fs.readFileSync(vc.storedPath);
+                return uploadToIPFS(fileBuffer);
+            })
+        );
+
         for (let i = 0; i < reviewed.length; i++) {
             const vc = reviewed[i];
-            const fileBuffer = fs.readFileSync(vc.storedPath);
-            const ipfsResult = await uploadToIPFS(fileBuffer);
-            const ipfsHash = ipfsResult.cid; // Extract CID from {cid, isDemo}
+            const ipfsHash = ipfsResults[i].cid;
 
             records.push({
                 id: certIds[i],
@@ -371,6 +326,15 @@ async function recordMint(req, res) {
         const { address: certAddress } = await getCertificateContractInfo(chainId);
         await verifyTxReceipt(txHash, chainId, certAddress, adminAddress);
 
+        // Pre-flight validation (Fix #4): read back the first record to ensure
+        // the ID string signed via MetaMask exactly matches our DB string.
+        const firstCertId = records[0].id;
+        const onChainCheck = await verifyOnBlockchain(firstCertId, chainId);
+        if (!onChainCheck.exists) {
+            console.error(`[Record Mint] ID Mismatch: frontend minted an ID different from ${firstCertId}`);
+            return res.status(400).json({ success: false, error: "ID_MISMATCH", message: "Certificate ID mismatch: The ID signed via MetaMask does not match the exact generated ID. Please try again." });
+        }
+
         const networkId = Number(chainId);
 
         // Find student user IDs for records that have studentEmail
@@ -404,10 +368,10 @@ async function recordMint(req, res) {
 
         await Certificate.insertMany(docs);
 
-        // Optional email — never blocks or fails issuance if delivery fails.
+        // Optional email — fire-and-forget (never blocks or fails issuance)
         for (const r of records) {
             if (r.studentEmail) {
-                await sendCertificateEmail({
+                sendCertificateEmail({
                     to: r.studentEmail.trim(),
                     studentName: r.studentName,
                     course: r.course,
@@ -432,6 +396,9 @@ async function recordMint(req, res) {
 // ─────────────────────────────────────────────
 exports.prepareSingle = async (req, res) => {
     try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: "NO_FILE", message: "No PDF file uploaded." });
+        }
         const filePath = req.file.path;
         const fileBuffer = fs.readFileSync(filePath);
 
@@ -439,7 +406,7 @@ exports.prepareSingle = async (req, res) => {
         const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
         // 2️⃣ Format Validation - use shared validation function
-        if (req.file.mimetype !== "application/pdf" && req.file.mimetype !== "application/x-pdf") {
+        if (req.file.mimetype !== "application/pdf" && req.file.mimetype !== "application/x-pdf" && req.file.mimetype !== "application/octet-stream") {
             fs.unlinkSync(filePath);
             return res.status(400).json({ success: false, error: "INVALID_FORMAT", message: "Only PDF files are allowed." });
         }
@@ -624,7 +591,11 @@ exports.analyzeBatch = async (req, res) => {
 // ─────────────────────────────────────────────
 exports.verifyCertificate = async (req, res) => {
     try {
-        const certId = req.params.id;
+        // Normalize certId — trim whitespace and uppercase to match on-chain string exactly
+        const certId = (req.params.id || '').trim().toUpperCase();
+        if (!certId) {
+            return res.status(400).json({ verified: false, error: "Certificate ID is required" });
+        }
         const submittedFileHash = req.query.fileHash || null;
 
         // The DB record knows which network this cert was minted on; fall back
@@ -638,7 +609,12 @@ exports.verifyCertificate = async (req, res) => {
         if (!data.exists) {
             return res.status(404).json({
                 verified: false,
-                error: "Certificate not found on blockchain ledger"
+                error: "Certificate not found on blockchain ledger",
+                certId,
+                chainId,
+                hint: dbCert
+                    ? `Certificate exists in DB but not found on contract at chainId=${chainId}. The contract may have been redeployed.`
+                    : `No database record found for this ID either. Confirm the ID is correct.`
             });
         }
 
@@ -707,8 +683,10 @@ exports.getStats = async (req, res) => {
         const total   = await Certificate.countDocuments();
         const revoked = await Certificate.countDocuments({ revoked: true });
 
-        // "Verified today" = documents created in the last 24h
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Time-range filtering: accept '24h', '7d', '30d' (default '24h')
+        const timeRange = req.query.timeRange || '24h';
+        const rangeMs = { '24h': 24 * 60 * 60 * 1000, '7d': 7 * 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000 };
+        const since = new Date(Date.now() - (rangeMs[timeRange] || rangeMs['24h']));
         const issuedToday = await Certificate.countDocuments({ createdAt: { $gte: since } });
 
         // Average AI trust score
@@ -760,8 +738,10 @@ exports.getAdminStats = async (req, res) => {
         const total   = await Certificate.countDocuments({ issuedBy: adminId });
         const revoked = await Certificate.countDocuments({ issuedBy: adminId, revoked: true });
 
-        // "Issued today" = documents created in the last 24h by this admin
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Time-range filtering: accept '24h', '7d', '30d' (default '24h')
+        const timeRange = req.query.timeRange || '24h';
+        const rangeMs = { '24h': 24 * 60 * 60 * 1000, '7d': 7 * 24 * 60 * 60 * 1000, '30d': 30 * 24 * 60 * 60 * 1000 };
+        const since = new Date(Date.now() - (rangeMs[timeRange] || rangeMs['24h']));
         const issuedToday = await Certificate.countDocuments({ issuedBy: adminId, createdAt: { $gte: since } });
 
         // Average AI trust score for this admin's certificates

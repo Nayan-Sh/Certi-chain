@@ -27,21 +27,24 @@ async function getRegisteredAddresses(chainId) {
     try {
         const config = await ContractConfig.findById("singleton").lean();
         if (config && config.certAddress && config.sbtAddress) {
-            // Match if chainId matches exactly, or if config has no chainId (legacy)
-            // and requested chain is the default Sepolia network.
             const configChainId = config.chainId != null ? Number(config.chainId) : null;
             const isDefaultNetwork = requestedChainId === 11155111;
             if (configChainId === requestedChainId || (configChainId === null && isDefaultNetwork)) {
+                console.log(`[Blockchain] Resolved from MongoDB: certAddress=${config.certAddress} sbtAddress=${config.sbtAddress} chainId=${requestedChainId}`);
                 return { certAddress: config.certAddress, sbtAddress: config.sbtAddress };
+            } else {
+                console.warn(`[Blockchain] MongoDB record chainId=${configChainId} does not match requested chainId=${requestedChainId} — falling back to .env`);
             }
+        } else {
+            console.warn(`[Blockchain] No ContractConfig in MongoDB (or missing addresses) — falling back to .env for chainId=${requestedChainId}`);
         }
     } catch (err) {
-        // DB unavailable — fall through to .env.
+        console.warn(`[Blockchain] DB unavailable when resolving addresses: ${err.message} — falling back to .env`);
     }
-    return {
-        certAddress: process.env.CONTRACT_ADDRESS,
-        sbtAddress: process.env.SBT_CONTRACT_ADDRESS,
-    };
+    const certAddress = process.env.CONTRACT_ADDRESS;
+    const sbtAddress = process.env.SBT_CONTRACT_ADDRESS;
+    console.log(`[Blockchain] .env fallback: certAddress=${certAddress} sbtAddress=${sbtAddress} chainId=${requestedChainId}`);
+    return { certAddress, sbtAddress };
 }
 
 // Verify live code actually sits at the address on the target network before
@@ -77,8 +80,10 @@ async function getSBTContractInfo(chainId) {
 // ── Read-only verification ──────────────────────────────────────────────────
 async function verifyOnBlockchain(certId, chainId) {
     const { address, abi } = await getCertificateContractInfo(chainId);
+    console.log(`[Blockchain] verifyOnBlockchain: certId="${certId}" contract=${address} chainId=${chainId}`);
     const contract = new ethers.Contract(address, abi, getProvider(chainId));
     const result = await contract.verifyCertificate(certId);
+    console.log(`[Blockchain] verifyCertificate result: exists=${result.exists} revoked=${result.revoked} name="${result.studentName}"`);
     return {
         studentName: result.studentName,
         course:      result.course,

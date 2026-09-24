@@ -2,8 +2,7 @@ Flask
 Pillow
 pytesseract
 numpy
-fuzzywuzzy
-python-Levenshtein
+rapidfuzz
 PyMuPDF
 python-dotenv
 google-genai

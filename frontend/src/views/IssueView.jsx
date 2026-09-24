@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import api from '../api';
 import { NETWORKS } from '../utils/constants';
-import { buildCertificateHtml } from '../utils/printTemplates';
+
 import {
   X, Copy, CheckCircle2, FileText, Zap, Printer,
   FileUp, Sparkles, AlertCircle, RefreshCw, Share2,
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
-import { genId, copyToClipboard, printHtml } from '../utils/helpers';
+import { genId } from '../utils/helpers';
 import AiReportCard from '../components/ui/AiReportCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import StatTile from '../components/ui/StatTile';
@@ -18,7 +18,7 @@ function IssueView({ showToast, wallet, contract }) {
   const [mode, setMode] = useState('single');
   const [form, setForm] = useState({ id: genId(), studentName: '', course: '', orgName: 'CertifyChain Institute', studentEmail: '' });
   const [file, setFile] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+
 
   const [batchFiles, setBatchFiles] = useState([]);
   const [batchProgress, setBatchProgress] = useState(0);
@@ -67,11 +67,7 @@ function IssueView({ showToast, wallet, contract }) {
     e.target.value = '';
   };
 
-  const removeBatchFile = (id) => {
-    setBatchFiles((prev) => prev.filter((f) => f.id !== id));
-    setBatchToken(null);
-    setReviewRows([]);
-  };
+
 
   const updateReviewRow = (idx, field, value) => {
     setReviewRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
@@ -232,7 +228,7 @@ function IssueView({ showToast, wallet, contract }) {
 
     setBusy(true);
     setResult(null);
-    setUploadProgress(0);
+
 
     try {
       const payload = new FormData();
@@ -241,10 +237,7 @@ function IssueView({ showToast, wallet, contract }) {
 
       const prep = await api.post('/api/prepare-single', payload, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(progress);
-        },
+
       });
 
       if (!prep.data?.success || !prep.data.record) {
@@ -308,7 +301,7 @@ function IssueView({ showToast, wallet, contract }) {
       }
     } finally {
       setBusy(false);
-      setUploadProgress(0);
+
     }
   };
 

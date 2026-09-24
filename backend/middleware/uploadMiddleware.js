@@ -13,14 +13,19 @@ const storage = multer.diskStorage({
         cb(null, UPLOAD_DIR);
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + "-" + file.originalname);
+        // Sanitize the original filename to prevent path traversal attacks.
+        // Strip all path separators and keep only safe characters.
+        const sanitized = path.basename(file.originalname)
+            .replace(/[^a-zA-Z0-9._-]/g, '_')
+            .replace(/\.{2,}/g, '_'); // no double dots
+        cb(null, Date.now() + '-' + sanitized);
     }
 });
 
 // Only allow PDF files — reject everything else before it reaches the controller
 const pdfOnlyFilter = (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const allowedMimes = ["application/pdf", "application/x-pdf"];
+    const allowedMimes = ["application/pdf", "application/x-pdf", "application/octet-stream"];
 
     if (ext !== ".pdf" || !allowedMimes.includes(file.mimetype)) {
         const err = new Error(
@@ -88,7 +93,7 @@ async function validateSinglePagePDF(fileBuffer) {
 const upload = multer({
     storage,
     fileFilter: pdfOnlyFilter,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10 MB max per file
+    limits: { fileSize: 5 * 1024 * 1024 } // 5 MB max per file
 });
 
 module.exports = { upload, validateSinglePagePDF };

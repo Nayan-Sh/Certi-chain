@@ -14,11 +14,15 @@ contract SoulboundCertificate is ERC721, Ownable {
 
     // Mapping from tokenId to the IPFS URI representing the metadata
     mapping(uint256 => string) private _tokenUris;
-    
+
+    // Reverse lookup so admin burn can clear the claim flag for a token
+    mapping(uint256 => string) private _certIdOf;
+
     // Mapping to track which certificate IDs have already been claimed as NFTs
     mapping(string => bool) public isClaimed;
 
     event CertificateClaimed(address indexed studentWallet, uint256 indexed tokenId, string certificateId);
+    event CertificateBurned(address indexed previousOwner, uint256 indexed tokenId, string certificateId);
 
     constructor() ERC721("CertifyChain Soulbound", "CERT-SBT") Ownable(msg.sender) {}
 
@@ -38,10 +42,30 @@ contract SoulboundCertificate is ERC721, Ownable {
         uint256 tokenId = _nextTokenId++;
         _mint(student, tokenId);
         _tokenUris[tokenId] = uri;
+        _certIdOf[tokenId] = certificateId;
 
         isClaimed[certificateId] = true;
 
         emit CertificateClaimed(student, tokenId, certificateId);
+    }
+
+    /**
+     * @dev Admin-only burn so a compromised student wallet can have its SBT revoked.
+     * Cleans claim mappings so the same certificateId can be re-issued if needed.
+     * Emits the standard ERC-721 Transfer(from, address(0), tokenId) burn event.
+     */
+    function burn(uint256 tokenId) public onlyOwner {
+        address previousOwner = _requireOwned(tokenId);
+        string memory certificateId = _certIdOf[tokenId];
+
+        if (bytes(certificateId).length != 0) {
+            isClaimed[certificateId] = false;
+            delete _certIdOf[tokenId];
+        }
+        delete _tokenUris[tokenId];
+
+        _burn(tokenId);
+        emit CertificateBurned(previousOwner, tokenId, certificateId);
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {

@@ -16,6 +16,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Retry once on network error (masks cold-start first-use failures)
+api.interceptors.response.use(
+  (res) => res,
+  async (err) => {
+    const config = err.config;
+    if (!err.response && !config._retried) {
+      config._retried = true;
+      await new Promise((r) => setTimeout(r, 1200));
+      return api(config);
+    }
+    return Promise.reject(err);
+  }
+);
+
 export default api;
 
 // ── Auth helpers ──────────────────────────────────────────────────────────
@@ -37,7 +51,7 @@ export const authApi = {
 
   login: (identifier, password, role) => api.post('/api/auth/login', { identifier, password, role }),
   checkEmail: (email) => api.get('/api/auth/check-email', { params: { email } }),
-  googleAuth: (credential) => api.post('/api/auth/google', { credential }),
+  googleAuth: (credential, role, inviteCode) => api.post('/api/auth/google', { credential, role, inviteCode }),
 };
 
 // ── History helpers ───────────────────────────────────────────────────────

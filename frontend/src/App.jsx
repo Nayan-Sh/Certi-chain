@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate, Outlet } from 'react-router-dom';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
-import { ethers } from 'ethers';
+
 import './index.css';
 import Signup from './Signup';
 import Login from './Login';
 import Home from './Home';
-import api, { authApi, historyApi } from './api';
+import { historyApi } from './api';
 import NETWORKS from './networks';
 import { useWallet } from './hooks/useWallet';
 import { useContract } from './hooks/useContract';
@@ -151,14 +151,14 @@ function Dashboard({ showToast, userRole }) {
         const { data } = await historyApi.getHistory();
         setHistory(data);
       } else {
-        const { data } = await auth.get(`${API}/stats`);
+        const { data } = await auth.get(`${API}/stats`, { params: { timeRange: selectedTimeRange } });
         setStats(data);
       }
     } catch {
       if (userRole !== 'student') setStats(null);
       showToast('Failed to load dashboard data', 'error');
     } finally { setLoading(false); }
-  }, [showToast, userRole]);
+  }, [showToast, userRole, selectedTimeRange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -385,7 +385,7 @@ function IssueView({ showToast, wallet, contract }) {
   const [mode, setMode] = useState('single');
   const [form, setForm] = useState({ id: genId(), studentName: '', course: '', orgName: 'CertifyChain Institute', studentEmail: '' });
   const [file, setFile] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+
   const [batchFiles, setBatchFiles] = useState([]);
   const [batchProgress, setBatchProgress] = useState(0);
   const [batchProcessing, setBatchProcessing] = useState(false);
@@ -585,7 +585,7 @@ function IssueView({ showToast, wallet, contract }) {
 
     setBusy(true);
     setResult(null);
-    setUploadProgress(0);
+
 
     try {
       const payload = new FormData();
@@ -594,10 +594,7 @@ function IssueView({ showToast, wallet, contract }) {
 
       const prep = await auth.post(`${API}/prepare-single`, payload, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(progress);
-        }
+
       });
 
       if (!prep.data?.success || !prep.data.record) {
@@ -661,7 +658,7 @@ function IssueView({ showToast, wallet, contract }) {
       }
     } finally {
       setBusy(false);
-      setUploadProgress(0);
+
     }
   };
 
@@ -1207,7 +1204,7 @@ function VerifyView({ showToast, wallet, contract }) {
         // Save not found to history
         try {
           await historyApi.addHistory({ certificateId: certId.trim(), status: 'invalid', metadata: { error: 'NOT_FOUND' } });
-        } catch (e) { }
+        } catch (err) { console.error(err); }
       } else {
         showToast('Error: ' + (err.response?.data?.error || err.message), 'error');
       }
@@ -1912,7 +1909,7 @@ function RevokeView({ showToast, wallet, contract }) {
   const [certId, setCertId] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const isMobile = window.innerWidth <= 768;
+
 
   const handleRevoke = async () => {
     if (!certId) {
@@ -2308,7 +2305,7 @@ function AppShell({ userRole, handleLogout, showToast, isMobile, isMobileMenuOpe
 // ── App Router Wrapper ────────────────────────────────────────────────────────
 export default function App() {
   const navigate = useNavigate();
-  const location = useLocation();
+
   const { toast, showToast, hideToast } = useToast();
 
   const [userRole, setUserRole] = useState(() => {
@@ -2316,7 +2313,8 @@ export default function App() {
     if (savedUser) {
       try {
         return JSON.parse(savedUser).role || null;
-      } catch (e) {
+      } catch (err) {
+        console.error(err);
         return null;
       }
     }

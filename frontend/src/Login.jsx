@@ -47,6 +47,7 @@ export default function Login({ setUserRole, showToast }) {
       }, 200);
       return () => clearInterval(intervalId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGoogleCredentialResponse = async (response) => {

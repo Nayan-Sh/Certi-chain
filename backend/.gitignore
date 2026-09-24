@@ -1,0 +1,8 @@
+# Secrets — never commit API keys or JWT material
+.env
+.env.*
+!.env.example
+
+# Local uploads and dependencies
+uploads/
+node_modules/

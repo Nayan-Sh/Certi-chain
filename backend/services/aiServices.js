@@ -36,7 +36,7 @@ async function analyzeWithAI(filePath, metadata) {
             formData,
             {
                 headers: formData.getHeaders(),
-                timeout: 30000, // 30s timeout for AI analysis
+                timeout: 60000, // 60s timeout for AI analysis (OCR can be slow on Windows)
             }
         );
         return response.data;

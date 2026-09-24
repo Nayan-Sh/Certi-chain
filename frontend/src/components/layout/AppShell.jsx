@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Award, Search, ShieldAlert, LogOut, Menu, X, Bell } from 'lucide-react';
+import { LayoutDashboard, Award, Search, ShieldAlert, LogOut, Menu, X, Bell, ShieldCheck, Wallet, Download } from 'lucide-react';
 import AppLogo from '../ui/AppLogo';
+import { truncateAddress } from '../../utils/helpers';
 
 function AppShell({ userRole, handleLogout, showToast, isMobile, isMobileMenuOpen, setIsMobileMenuOpen, deferredPrompt, handleInstallClick, navItems, wallet }) {
   const navigate = useNavigate();

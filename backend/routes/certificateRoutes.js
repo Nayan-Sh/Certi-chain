@@ -10,9 +10,7 @@ const { requireRole } = require("../middleware/authMiddleware");
 // Role-based checks (requireRole) are applied per-route below.
 // EXCEPTION: GET /stats is public for homepage statistics display
 router.use((req, res, next) => {
-    console.log('[DEBUG certificateRoutes] path:', req.path, 'method:', req.method);
     if (req.method === 'GET' && req.path === '/stats') {
-        console.log('[DEBUG certificateRoutes] Bypassing auth for /stats');
         return next();
     }
     return authMiddleware(req, res, next);

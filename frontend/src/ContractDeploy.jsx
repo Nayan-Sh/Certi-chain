@@ -10,7 +10,6 @@ import { useWallet } from './hooks/useWallet';
 
 const DEFAULT_CHAIN_ID = 11155111; // Sepolia
 
-const truncateAddress = (addr) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '—';
 
 const copyToClipboard = async (text, showToast) => {
   try {
@@ -29,7 +28,8 @@ const copyToClipboard = async (text, showToast) => {
     document.execCommand('copy');
     document.body.removeChild(textArea);
     showToast('Copied to clipboard!', 'success');
-  } catch (err) {
+  } catch (error) {
+    console.error('Copy failed:', error);
     showToast('Copy failed — please copy manually', 'error');
   }
 };

@@ -6,7 +6,7 @@ function RevokeView({ showToast, wallet, contract }) {
   const [certId, setCertId] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const isMobile = window.innerWidth <= 768;
+
 
   const handleRevoke = async () => {
     if (!certId) {
@@ -25,6 +25,19 @@ function RevokeView({ showToast, wallet, contract }) {
       // chain — sign nowhere else.
       try {
         await contract.getContractInfo(wallet.chainId);
+        const onChainCert = await contract.verify(wallet.chainId, certId.trim());
+        if (!onChainCert.exists) {
+            setResult({ success: false, error: `Certificate ID "${certId.trim()}" does not exist on the connected network (Chain ${wallet.chainId}). Please check the ID or switch networks.` });
+            showToast('Certificate not found on this network.', 'error');
+            setBusy(false);
+            return;
+        }
+        if (onChainCert.revoked) {
+            setResult({ success: false, error: 'Certificate is already revoked on this network.' });
+            showToast('Certificate already revoked.', 'warning');
+            setBusy(false);
+            return;
+        }
       } catch (e) {
         setResult({ success: false, error: e.message });
         showToast(e.message, 'error');

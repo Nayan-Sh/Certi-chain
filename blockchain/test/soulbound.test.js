@@ -44,4 +44,12 @@ describe("SoulboundCertificate — self-claim & owner mint", function () {
       sbt.connect(student).transferFrom(student.address, owner.address, 0)
     ).to.be.revertedWith("SoulboundToken: Transfer failed. Certificates are non-transferable.");
   });
+
+  it("lets the owner burn a compromised SBT and clear the claim flag", async function () {
+    await sbt.connect(student).issueSBT(student.address, "CERT-006", "ipfs://QmHash6");
+    await expect(sbt.connect(student).burn(0)).to.be.revertedWithCustomError(sbt, "OwnableUnauthorizedAccount");
+    await expect(sbt.burn(0)).to.emit(sbt, "CertificateBurned").withArgs(student.address, 0, "CERT-006");
+    expect(await sbt.isClaimed("CERT-006")).to.equal(false);
+    await expect(sbt.ownerOf(0)).to.be.revertedWithCustomError(sbt, "ERC721NonexistentToken");
+  });
 });

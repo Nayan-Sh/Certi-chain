@@ -1,0 +1,35 @@
+{
+  "name": "certifychain-backend",
+  "version": "1.0.0",
+  "description": "CertifyChain backend — certificate issuance, verification, and blockchain interaction",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1",
+    "form-data": "^4.0.5",
+    "google-auth-library": "^11.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.1",
+    "multer": "^2.1.1",
+    "nodemailer": "^9.0.3",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4"
+  },
+  "keywords": [
+    "certificates",
+    "blockchain",
+    "verification"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

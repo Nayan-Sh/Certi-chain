@@ -1,0 +1,6 @@
+# Secrets — never commit private keys or RPC credentials
+.env
+.env.*
+!.env.example
+
+node_modules/

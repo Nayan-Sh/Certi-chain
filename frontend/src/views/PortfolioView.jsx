@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import api, { historyApi } from '../api';
-import { computeFileHash, truncateAddress, printHtml } from '../utils/helpers';
-import { buildCertificateHtml } from '../utils/printTemplates';
+import api from '../api';
+
 import { NETWORKS } from '../utils/constants';
 import { Shield, ShieldAlert, ShieldCheck, Sparkles, User, BookOpen, Clock, FileText, RefreshCw, XCircle } from 'lucide-react';
-import { useParams } from 'react-router-dom';
 
-import { fmtDateTime } from '../utils/helpers';
+
+
 import AppLogo from '../components/ui/AppLogo';
 import StatusBadge from '../components/ui/StatusBadge';
 

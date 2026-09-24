@@ -11,7 +11,7 @@ import logging
 import os
 import re
 
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
 
 from config import KNOWN_ORGS_PATH
 

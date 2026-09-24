@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import { useScroll, useTransform, AnimatePresence, motion } from 'framer-motion';
 import {
   ShieldCheck, FileSearch, Lock, Cpu, Database, QrCode, Zap,
   ArrowRight, ChevronRight, Github, Twitter, Linkedin,
@@ -503,6 +503,7 @@ export default function Home() {
                 The leading decentralized credential verification network. Building trust through cryptography since 2024.
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
+                {/* eslint-disable-next-line no-unused-vars */}
                 {[{ Icon: Twitter, label: 'Twitter' }, { Icon: Github, label: 'GitHub' }, { Icon: Linkedin, label: 'LinkedIn' }].map(({ Icon, label }) => (
                   <a key={label} href="#" aria-label={label}
                     style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', transition: 'all 0.2s', textDecoration: 'none' }}

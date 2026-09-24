@@ -7,7 +7,7 @@ and the organization registry matcher.
 
 import re
 
-from fuzzywuzzy import fuzz
+from rapidfuzz import fuzz
 
 # Common OCR character confusions mapped to canonical forms
 OCR_CORRECTIONS = {

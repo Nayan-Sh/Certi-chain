@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
 import api from '../api';
 
@@ -63,6 +63,17 @@ export function useContract() {
 
     // ── Revoke ─────────────────────────────────────────────────────────────
 
+    const verify = async (chainId, certId) => {
+        const { certAddress, certAbi } = await getContractInfo(chainId);
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const contract = new ethers.Contract(certAddress, certAbi, provider);
+        const result = await contract.verifyCertificate(certId);
+        return {
+            exists: result.exists,
+            revoked: result.revoked
+        };
+    };
+
     const revoke = async (chainId, certId) => {
         const { certAddress, certAbi } = await getContractInfo(chainId);
         const signer = await getSigner();
@@ -84,5 +95,5 @@ export function useContract() {
         return tx.hash;
     };
 
-    return { getContractInfo, getSigner, issue, batchIssue, revoke, issueSBT };
+    return { getContractInfo, getSigner, issue, batchIssue, verify, revoke, issueSBT };
 }

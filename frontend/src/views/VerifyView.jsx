@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import api, { historyApi } from '../api';
 import { computeFileHash, truncateAddress, printHtml } from '../utils/helpers';
 import { buildCertificateHtml } from '../utils/printTemplates';
@@ -11,7 +11,7 @@ import {
   Share2, ExternalLink, QrCode, User, BookOpen, Building2, Calendar
 } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { useLocation } from 'react-router-dom';
+
 
 import { fmtDateTime, copyToClipboard } from '../utils/helpers';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -146,7 +146,7 @@ function VerifyView({ showToast, wallet, contract }) {
         // Save not found to history
         try {
           await historyApi.addHistory({ certificateId: certId.trim(), status: 'invalid', metadata: { error: 'NOT_FOUND' } });
-        } catch (e) { }
+        } catch (err) { console.error(err); }
       } else {
         showToast('Error: ' + (err.response?.data?.error || err.message), 'error');
       }

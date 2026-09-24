@@ -101,6 +101,7 @@ export default function Signup({ setUserRole, showToast }) {
       }, 200);
       return () => clearInterval(intervalId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleGoogleCredentialResponse = async (response) => {
@@ -112,7 +113,7 @@ export default function Signup({ setUserRole, showToast }) {
   const [role, setRole] = useState('student');
   const [formData, setFormData] = useState({
     fullName: '', email: '', phone: '',
-    rollNumber: '', institution: '', adminId: '',
+    rollNumber: '', institution: '', adminId: '', inviteCode: '',
     password: '', confirmPassword: '',
   });
   const [errors, setErrors] = useState({});
@@ -120,6 +121,12 @@ export default function Signup({ setUserRole, showToast }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [otpResendTimer, setOtpResendTimer] = useState(0);
+
+  // Fix stale closure for Google Auth callback
+  const latestData = useRef({ role, inviteCode: formData.inviteCode });
+  useEffect(() => {
+    latestData.current = { role, inviteCode: formData.inviteCode };
+  }, [role, formData.inviteCode]);
 
   const startResendTimer = () => {
     setOtpResendTimer(30);
@@ -135,7 +142,17 @@ export default function Signup({ setUserRole, showToast }) {
   const handleGoogleAuth = async (credential) => {
     setIsSubmitting(true);
     try {
-      const res = await authApi.googleAuth(credential);
+      const currentRole = latestData.current.role;
+      const currentInvite = latestData.current.inviteCode;
+      
+      // Client-side validation if admin
+      if (currentRole === 'admin' && !currentInvite.trim()) {
+        showToast('Admin Invite Code is required for Google Sign-Up', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const res = await authApi.googleAuth(credential, currentRole, currentInvite);
       localStorage.setItem('certifychain_token', res.data.token);
       localStorage.setItem('certifychain_user', JSON.stringify(res.data.user));
       setUserRole(res.data.user.role || 'student');
@@ -168,6 +185,8 @@ export default function Signup({ setUserRole, showToast }) {
       newErrors.institution = 'Institution is required for students';
     if (role === 'admin' && !formData.adminId)
       newErrors.adminId = 'Admin ID is required';
+    if (role === 'admin' && !formData.inviteCode)
+      newErrors.inviteCode = 'Invite code is required';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -219,6 +238,7 @@ export default function Signup({ setUserRole, showToast }) {
 
       if (role === 'admin') {
         payload.adminId = formData.adminId;
+        payload.inviteCode = formData.inviteCode;
       } else {
         payload.fullName = formData.fullName;
         payload.rollNumber = formData.rollNumber;
@@ -423,14 +443,24 @@ export default function Signup({ setUserRole, showToast }) {
                     </FieldRow>
                   </>
                 ) : (
-                  <FieldRow label="Admin ID" error={errors.adminId} icon={<Building2 size={18} />}>
-                    <input
-                      name="adminId" type="text" value={formData.adminId}
-                      onChange={handleChange}
-                      placeholder="ADMIN-001"
-                      style={inputStyle}
-                    />
-                  </FieldRow>
+                  <>
+                    <FieldRow label="Admin ID" error={errors.adminId} icon={<Building2 size={18} />}>
+                      <input
+                        name="adminId" type="text" value={formData.adminId}
+                        onChange={handleChange}
+                        placeholder="ADMIN-001"
+                        style={inputStyle}
+                      />
+                    </FieldRow>
+                    <FieldRow label="Admin Invite Code" error={errors.inviteCode} icon={<Lock size={18} />}>
+                      <input
+                        name="inviteCode" type="password" value={formData.inviteCode}
+                        onChange={handleChange}
+                        placeholder="Required for admin registration"
+                        style={inputStyle}
+                      />
+                    </FieldRow>
+                  </>
                 )}
 
                 {/* Password */}
@@ -512,7 +542,12 @@ export default function Signup({ setUserRole, showToast }) {
                 </div>
 
                 {/* Google Sign-In Button */}
-                <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+                {role === 'admin' && !formData.inviteCode.trim() && (
+                  <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px', marginBottom: '16px' }}>
+                    Fill in your Admin Invite Code above to enable Google Sign-Up
+                  </p>
+                )}
+                <div style={{ width: '100%', display: (role === 'admin' && !formData.inviteCode.trim()) ? 'none' : 'flex', justifyContent: 'center' }}>
                   <div ref={googleBtnRef} style={{ display: 'flex', justifyContent: 'center' }} />
                 </div>
 

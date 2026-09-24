@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Award, Zap, ShieldAlert, TrendingUp, LayoutDashboard, History, RefreshCw, FileSearch, CheckCircle2, XCircle, CheckCircle, AlertCircle, Trash2, BookOpen, Building2, GraduationCap, BarChart2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import api, { historyApi, statsApi } from '../api';
+
+import api from '../api';
 import Skeleton from '../components/ui/Skeleton';
 import ConfirmationDialog from '../components/ui/ConfirmationDialog';
 
 function Dashboard({ showToast, userRole }) {
-  const navigate = useNavigate();
+
   const [stats, setStats] = useState(null);
-  const [history, setHistory] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [selectedTimeRange, setSelectedTimeRange] = useState('24h');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -17,17 +17,15 @@ function Dashboard({ showToast, userRole }) {
     setLoading(true);
     try {
       if (userRole === 'student') {
-        const [historyRes, statsRes] = await Promise.all([
-          historyApi.getHistory(),
-          api.get('/api/certificates/student-stats')
-        ]);
-        setHistory(historyRes.data || []);
+        const statsRes = await api.get('/api/certificates/student-stats');
+
         setStats(statsRes.data || null);
       } else {
         const { data } = await api.get('/api/certificates/admin-stats');
         setStats(data || null);
       }
     } catch (err) {
+      console.error(err);
       if (userRole !== 'student') setStats(null);
       showToast('Failed to load dashboard data', 'error');
     } finally {
@@ -70,7 +68,7 @@ function Dashboard({ showToast, userRole }) {
           <span className="text-gradient">Student Dashboard</span>
         </h1>
         <div style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: '14px' }}>
-          Home > Student Dashboard
+          Home &gt; Student Dashboard
         </div>
 
         {/* Student Stat Widgets */}
@@ -130,7 +128,7 @@ function Dashboard({ showToast, userRole }) {
                 </thead>
                 <tbody>
                   {stats.recent.map((c, idx) => (
-                    <tr key={c.id} style={{ borderTop: '1px solid var(--glass-border)', transition: 'background 0.2s', animationDelay: `${idx * 0.05}s` }} className="fade-in" onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.02)'} onMouseOut={e => e.currentTarget.style.background='transparent'}>
+                    <tr key={c.id} style={{ borderTop: '1px solid var(--glass-border)', transition: 'background 0.2s', animationDelay: `${idx * 0.05}s` }} className="fade-in" onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={{ padding: '16px' }}>
                         <code style={{
                           fontSize: '13px', color: 'var(--accent-purple)', fontFamily: 'monospace',
@@ -206,7 +204,7 @@ function Dashboard({ showToast, userRole }) {
             <span className="text-gradient">Admin Dashboard</span>
           </h1>
           <div style={{ color: 'var(--text-muted)', marginTop: '8px', fontSize: '14px' }}>
-            Home > Admin Dashboard
+            Home &gt; Admin Dashboard
           </div>
         </div>
 
@@ -248,7 +246,7 @@ function Dashboard({ showToast, userRole }) {
           <AlertCircle size={56} color="var(--accent-red)" style={{ marginBottom: '20px', filter: 'drop-shadow(0 0 10px rgba(239,68,68,0.4))' }} />
           <h2 style={{ color: 'var(--accent-red)', marginBottom: '12px' }}>Backend Connection Failed</h2>
           <p style={{ color: 'var(--text-muted)', maxWidth: '400px', margin: '0 auto 24px' }}>Unable to retrieve dashboard statistics. Ensure the Node.js backend and Hardhat node are running.</p>
-          <button onClick={load} className="btn-3d" style={{ padding: '12px 24px' }}><RefreshCw size={18} style={{ marginRight: '8px' }}/> Retry Connection</button>
+          <button onClick={load} className="btn-3d" style={{ padding: '12px 24px' }}><RefreshCw size={18} style={{ marginRight: '8px' }} /> Retry Connection</button>
         </div>
       ) : (
         <div style={{ marginTop: '32px' }}>
@@ -306,9 +304,9 @@ function Dashboard({ showToast, userRole }) {
                   </thead>
                   <tbody>
                     {stats.recent.map((c, idx) => (
-                      <tr key={c.id} style={{ borderTop: '1px solid var(--glass-border)', transition: 'background 0.2s', animationDelay: `${idx * 0.05}s` }} className="fade-in" onMouseOver={e => e.currentTarget.style.background='rgba(255,255,255,0.02)'} onMouseOut={e => e.currentTarget.style.background='transparent'}>
+                      <tr key={c.id} style={{ borderTop: '1px solid var(--glass-border)', transition: 'background 0.2s', animationDelay: `${idx * 0.05}s` }} className="fade-in" onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'} onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
                         <td style={{ padding: '16px' }}>
-                           <div style={{
+                          <div style={{
                             width: '40px', height: '40px', borderRadius: '50%',
                             background: c.revoked ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -322,7 +320,7 @@ function Dashboard({ showToast, userRole }) {
                           <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{c.course}</div>
                         </td>
                         <td style={{ padding: '16px' }}>
-                           <code style={{
+                          <code style={{
                             fontSize: '13px', color: 'var(--accent-purple)', fontFamily: 'monospace',
                             background: 'rgba(79,70,229,0.1)', border: '1px solid rgba(79,70,229,0.2)',
                             padding: '6px 10px', borderRadius: '6px'
@@ -331,7 +329,7 @@ function Dashboard({ showToast, userRole }) {
                           </code>
                         </td>
                         <td style={{ padding: '16px' }}>
-                           <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                          <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.1)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
                             {c.aiScore ?? '—'}%
                           </span>
                         </td>

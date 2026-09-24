@@ -67,7 +67,7 @@ export async function computeFileHash(file) {
             .map(b => b.toString(16).padStart(2, '0')).join('');
           return resolve(hashHex);
         } catch (err) {
-          console.warn("Native crypto failed, using fallback...");
+          console.warn("Native crypto failed, using fallback...", err);
         }
       }
 

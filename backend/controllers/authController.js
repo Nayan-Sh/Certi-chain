@@ -97,7 +97,7 @@ exports.register = async (req, res) => {
     const {
       role, email, phone, password,
       // Admin fields
-      adminId,
+      adminId, inviteCode,
       // Student fields
       fullName, rollNumber, institution,
     } = req.body;
@@ -137,6 +137,9 @@ exports.register = async (req, res) => {
 
     if (role === 'admin') {
       if (!adminId) return res.status(400).json({ error: 'Admin ID is required.' });
+      if (!inviteCode || inviteCode !== process.env.ADMIN_INVITE_CODE) {
+        return res.status(403).json({ error: 'Invalid or missing admin invite code.' });
+      }
       userData.adminId = adminId.toUpperCase();
     } else {
       if (!fullName || !rollNumber || !institution) {
@@ -291,7 +294,7 @@ exports.checkEmail = async (req, res) => {
 // Google OAuth login / signup
 exports.googleAuth = async (req, res) => {
   try {
-    const { credential } = req.body; // Google ID token from frontend
+    const { credential, role, inviteCode } = req.body; // Google ID token from frontend
 
     if (!credential) {
       return res.status(400).json({ error: 'Google credential is required.' });
@@ -320,6 +323,11 @@ exports.googleAuth = async (req, res) => {
     let user = await User.findOne({ email: emailLower });
 
     if (user) {
+      if (role && user.role !== role) {
+        return res.status(403).json({
+          error: `This account is registered as a ${user.role}. Please use the ${user.role} login.`,
+        });
+      }
       // Existing user - link Google ID if not already linked
       if (!user.googleId) {
         user.googleId = googleId;
@@ -331,10 +339,15 @@ exports.googleAuth = async (req, res) => {
         await user.save();
       }
     } else {
-      // New user - create account (default to student role)
-      // Google users don't need phone/password since they auth via Google
+      // New user - create account
+      const requestedRole = role || 'student';
+      if (requestedRole === 'admin') {
+        if (!inviteCode || inviteCode !== process.env.ADMIN_INVITE_CODE) {
+          return res.status(403).json({ error: 'Invalid or missing admin invite code.' });
+        }
+      }
       user = await User.create({
-        role: 'student', // Default to student; can change later
+        role: requestedRole,
         email: emailLower,
         googleId,
         isVerified: true,

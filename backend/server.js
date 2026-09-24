@@ -3,6 +3,9 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
+// Security middleware — config guards, headers, NoSQL sanitization, rate limit, error handler
+const { assertConfig, securityHeaders, sanitizeMongo, rateLimit, notFound, errorHandler } = require("./middleware/security");
+
 // Route imports
 const certificateRoutes = require("./routes/certificateRoutes");
 const authRoutes = require("./routes/authRoutes");
@@ -11,11 +14,14 @@ const publicRoutes = require("./routes/publicRoutes");
 const contractRoutes = require("./routes/contractRoutes");
 const trainingRoutes = require("./routes/trainingRoutes");
 
+// Validate configuration at startup (warns on weak JWT_SECRET, missing MONGO_URI, etc.)
+assertConfig({ exitOnFailure: false });
+
 const app = express();
 
 // Restrict cross-origin requests to the frontend origin. Override via
 // CORS_ORIGIN env for production deployments (comma-separated list).
-const corsOrigins = process.env.CORS_ORIGIN 
+const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
   : ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'];
 
@@ -26,34 +32,25 @@ app.use(cors({ origin: function (origin, callback) {
     callback(new Error('Not allowed by CORS'));
   }
 }}));
+app.use(securityHeaders);
+app.use(sanitizeMongo);
 app.use(express.json());
-
-// Debug: Log all routes on startup
-setTimeout(() => {
-  console.log('[DEBUG] Registered routes:');
-  if (app.router && app.router.stack) {
-    app.router.stack.forEach((layer, i) => {
-      if (layer.route) {
-        console.log('  ', i, layer.route.path, Object.keys(layer.route.methods));
-      } else if (layer.handle?.stack) {
-        layer.handle.stack.forEach((subLayer, j) => {
-          if (subLayer.route) {
-            console.log('  ', i + '.' + j, subLayer.route.path, Object.keys(subLayer.route.methods));
-          }
-        });
-      }
-    });
-  }
-}, 500);
+// Skip rate limiting for OPTIONS preflight so the browser's first request never fails (#3 fix)
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, skip: (req) => req.method === 'OPTIONS' }));
 
 // Routes — public verify MUST be registered before the protected certificate
 // router so /api/certificates/verify/:id is reachable without a JWT.
+app.get("/api/health", (req, res) => res.json({ status: "ok", ts: Date.now() }));
 app.use("/api/auth", authRoutes);
 app.use("/api/certificates", publicRoutes);
 app.use("/api/certificates", certificateRoutes);
 app.use("/api/history", historyRoutes);
 app.use("/api/contract", contractRoutes);
 app.use("/api/ai", trainingRoutes);
+
+// 404 catch-all and centralised error handler
+app.use(notFound);
+app.use(errorHandler);
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/certificatesDB")
