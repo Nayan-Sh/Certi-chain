@@ -92,8 +92,10 @@ router.get("/info", async (req, res) => {
   }
 
   try {
+    console.log(`[ContractRoutes] GET /api/contract/info: chainId=${chainId}`);
     const certInfo = await getCertificateContractInfo(Number(chainId));
     const sbtInfo = await getSBTContractInfo(Number(chainId));
+    console.log(`[ContractRoutes] Returning certAddress=${certInfo.address}, sbtAddress=${sbtInfo.address}`);
 
     res.json({
       certAddress: certInfo.address,

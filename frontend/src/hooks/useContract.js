@@ -74,9 +74,18 @@ export function useContract() {
         const key = Number(chainId);
         console.log(`[useContract] Fetching FRESH contract info for chainId=${key} (bypassing cache)`);
 
-        // Clear cache for this chain
+        // Clear ALL cache sources for this chain
         delete cacheRef.current[key];
         delete cacheTimestampsRef.current[key];
+
+        // Also clear browser storage to ensure no stale data
+        try {
+            localStorage.removeItem(`contract_${key}`);
+            sessionStorage.removeItem(`contract_${key}`);
+            console.log(`[useContract] Cleared browser storage for chainId=${key}`);
+        } catch (e) {
+            console.warn(`[useContract] Could not clear browser storage: ${e.message}`);
+        }
 
         // Fetch fresh data
         return getContractInfo(chainId);
