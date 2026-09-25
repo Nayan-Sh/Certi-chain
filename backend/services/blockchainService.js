@@ -130,8 +130,8 @@ async function verifyTxReceipt(txHash, chainId, expectedTo, expectedFrom) {
         throw new Error("No contract address provided for verification.");
     }
     if (!normalizedReceiptTo || normalizedReceiptTo !== normalizedExpectedTo) {
-        console.error(`[Blockchain] Address mismatch: receipt.to=${normalizedReceiptTo}, expected=${normalizedExpectedTo}`);
-        throw new Error("Transaction did not target the registered contract.");
+        console.error(`[Blockchain] Address mismatch: receipt.to=${normalizedReceiptTo}, expected=${normalizedExpectedTo}, txHash=${txHash}, chainId=${chainId}`);
+        throw new Error(`Transaction did not target the registered contract. Expected: ${normalizedExpectedTo}, Got: ${normalizedReceiptTo}`);
     }
 
     if (expectedFrom && ethers.getAddress(receipt.from) !== ethers.getAddress(expectedFrom)) {

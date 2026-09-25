@@ -8,18 +8,48 @@ import api from '../api';
  * gas comes from the connected wallet (admin or student).
  *
  * Contract address + ABI are fetched from GET /api/contract/info?chainId=
- * on first use and cached in memory so each signing call is one round-trip.
+ * and cached in memory with automatic TTL and manual invalidation.
  */
 export function useContract() {
     const cacheRef = useRef({});
+    const cacheTimestampsRef = useRef({});
+    const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes auto-invalidation
 
     /**
-     * Fetch contract addresses + ABIs for the target chain. Cached in memory.
+     * Check if cache is still valid (not expired).
+     */
+    const isCacheValid = useCallback((chainId) => {
+        const key = Number(chainId);
+        const cached = cacheRef.current[key];
+        const cachedAt = cacheTimestampsRef.current[key];
+
+        if (!cached || !cachedAt) return false;
+
+        const age = Date.now() - cachedAt;
+        const isValid = age < CACHE_TTL_MS;
+
+        if (!isValid) {
+            console.log(`[useContract] Cache expired for chainId=${key} (age: ${Math.round(age / 1000)}s, TTL: ${Math.round(CACHE_TTL_MS / 1000)}s)`);
+        }
+
+        return isValid;
+    }, []);
+
+    /**
+     * Fetch contract addresses + ABIs for the target chain.
+     * Uses memory cache with 5-minute TTL.
+     * Call getFreshContractInfo() before signing to bypass cache.
      */
     const getContractInfo = useCallback(async (chainId) => {
         const key = Number(chainId);
-        if (cacheRef.current[key]) return cacheRef.current[key];
 
+        // Return cached if valid
+        if (isCacheValid(key)) {
+            console.log(`[useContract] Using cached contract info for chainId=${key}`);
+            return cacheRef.current[key];
+        }
+
+        console.log(`[useContract] Fetching fresh contract info for chainId=${key}`);
         const res = await api.get(`/api/contract/info?chainId=${key}`);
         const info = res.data;
         if (!info.certAddress) {
@@ -27,8 +57,46 @@ export function useContract() {
                 `Contracts not deployed on this network (chain ${key}). Open the Deploy Contracts panel and deploy first.`
             );
         }
+
+        // Store in cache with timestamp
         cacheRef.current[key] = info;
+        cacheTimestampsRef.current[key] = Date.now();
+        console.log(`[useContract] Cached contract info for chainId=${key}`);
+
         return info;
+    }, [isCacheValid]);
+
+    /**
+     * Fetch fresh contract info bypassing the cache.
+     * ALWAYS call this immediately before signing transactions.
+     */
+    const getFreshContractInfo = useCallback(async (chainId) => {
+        const key = Number(chainId);
+        console.log(`[useContract] Fetching FRESH contract info for chainId=${key} (bypassing cache)`);
+
+        // Clear cache for this chain
+        delete cacheRef.current[key];
+        delete cacheTimestampsRef.current[key];
+
+        // Fetch fresh data
+        return getContractInfo(chainId);
+    }, [getContractInfo]);
+
+    /**
+     * Invalidate the cache for a specific chainId or all chains.
+     * Call this after deploying/redeploying contracts.
+     */
+    const invalidateCache = useCallback((chainId = null) => {
+        if (chainId !== null) {
+            const key = Number(chainId);
+            delete cacheRef.current[key];
+            delete cacheTimestampsRef.current[key];
+            console.log(`[useContract] ✓ Invalidated cache for chainId=${key}`);
+        } else {
+            cacheRef.current = {};
+            cacheTimestampsRef.current = {};
+            console.log(`[useContract] ✓ Invalidated ALL caches`);
+        }
     }, []);
 
     const getSigner = async () => {
@@ -70,7 +138,8 @@ export function useContract() {
 
     const issue = async (chainId, id, studentName, course, orgName, ipfsHash, fileHash) => {
         try {
-            const { certAddress, certAbi } = await getContractInfo(chainId);
+            // Use FRESH contract info immediately before signing
+            const { certAddress, certAbi } = await getFreshContractInfo(chainId);
             const signer = await getSigner();
             const contract = new ethers.Contract(certAddress, certAbi, signer);
             const tx = await contract.issueCertificate(
@@ -85,7 +154,8 @@ export function useContract() {
 
     const batchIssue = async (chainId, ids, names, courses, orgs, ipfsHashes, fileHashes) => {
         try {
-            const { certAddress, certAbi } = await getContractInfo(chainId);
+            // Use FRESH contract info immediately before signing
+            const { certAddress, certAbi } = await getFreshContractInfo(chainId);
             const signer = await getSigner();
             const contract = new ethers.Contract(certAddress, certAbi, signer);
             const tx = await contract.batchIssueCertificates(
@@ -102,6 +172,7 @@ export function useContract() {
 
     const verify = async (chainId, certId) => {
         try {
+            // Can use cached info for read-only verification
             const { certAddress, certAbi } = await getContractInfo(chainId);
             const provider = new ethers.BrowserProvider(window.ethereum);
             const contract = new ethers.Contract(certAddress, certAbi, provider);
@@ -122,7 +193,8 @@ export function useContract() {
 
     const revoke = async (chainId, certId) => {
         try {
-            const { certAddress, certAbi } = await getContractInfo(chainId);
+            // Use FRESH contract info immediately before signing
+            const { certAddress, certAbi } = await getFreshContractInfo(chainId);
             const signer = await getSigner();
             const contract = new ethers.Contract(certAddress, certAbi, signer);
             const tx = await contract.revokeCertificate(certId);
@@ -137,7 +209,8 @@ export function useContract() {
 
     const issueSBT = async (chainId, studentAddress, certId, ipfsHash) => {
         try {
-            const { sbtAddress, sbtAbi } = await getContractInfo(chainId);
+            // Use FRESH contract info immediately before signing
+            const { sbtAddress, sbtAbi } = await getFreshContractInfo(chainId);
             const signer = await getSigner();
             const contract = new ethers.Contract(sbtAddress, sbtAbi, signer);
             const uri = `ipfs://${ipfsHash}`;
@@ -149,5 +222,15 @@ export function useContract() {
         }
     };
 
-    return { getContractInfo, getSigner, issue, batchIssue, verify, revoke, issueSBT };
+    return {
+        getContractInfo,
+        getFreshContractInfo,
+        getSigner,
+        issue,
+        batchIssue,
+        verify,
+        revoke,
+        issueSBT,
+        invalidateCache
+    };
 }
