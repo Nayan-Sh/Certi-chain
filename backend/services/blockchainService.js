@@ -121,9 +121,19 @@ async function verifyTxReceipt(txHash, chainId, expectedTo, expectedFrom) {
     if (receipt.status !== 1) {
         throw new Error("Transaction failed on-chain (status 0).");
     }
-    if (!expectedTo || ethers.getAddress(receipt.to) !== ethers.getAddress(expectedTo)) {
+
+    // Normalize and compare contract addresses — receipt.to is the contract that was called
+    const normalizedReceiptTo = receipt.to ? ethers.getAddress(receipt.to) : null;
+    const normalizedExpectedTo = expectedTo ? ethers.getAddress(expectedTo) : null;
+
+    if (!normalizedExpectedTo) {
+        throw new Error("No contract address provided for verification.");
+    }
+    if (!normalizedReceiptTo || normalizedReceiptTo !== normalizedExpectedTo) {
+        console.error(`[Blockchain] Address mismatch: receipt.to=${normalizedReceiptTo}, expected=${normalizedExpectedTo}`);
         throw new Error("Transaction did not target the registered contract.");
     }
+
     if (expectedFrom && ethers.getAddress(receipt.from) !== ethers.getAddress(expectedFrom)) {
         throw new Error("Transaction was not signed by the reported wallet.");
     }
