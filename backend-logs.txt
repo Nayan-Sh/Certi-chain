@@ -1,0 +1,11 @@
+﻿
+> certifychain-backend@1.0.0 start
+> node server.js
+
+[dotenv@17.3.1] injecting env (23) from .env -- tip: 🤖 agentic secret storage: https://dotenvx.com/as2
+[dotenv@17.3.1] injecting env (23) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+[Google OAuth] GOOGLE_CLIENT_ID configured: true (set)
+[config] Configuration checks passed.
+[IPFS] Real IPFS pinning via Pinata (PINATA_API_KEY is set)
+Server running on port 5000
+MongoDB connected

@@ -650,9 +650,9 @@ exports.verifyCertificate = async (req, res) => {
             hashMatch = (submittedFileHash.toLowerCase() === data.fileHash.toLowerCase());
         }
 
-        // 3️⃣ Overall verdict. Revocation is authoritative from the chain — a
-        //    revoked cert shows red regardless of the DB flag.
-        const verified = hashMatch !== false && !data.revoked;
+        // 3️⃣ Overall verdict. Certificate must exist on-chain, not be revoked, and
+        //    (if a file hash was provided) the hash must match.
+        const verified = data.exists && hashMatch !== false && !data.revoked;
 
         res.json({
             verified,

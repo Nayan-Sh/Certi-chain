@@ -59,7 +59,7 @@ async function getCertificateContractInfo(chainId) {
     if (!code || code === "0x") {
         throw new Error(`No smart contract deployed at ${address} on network ${chainId}.`);
     }
-    return { address, abi: contractABI.abi, chainId: Number(chainId) };
+    return { address: ethers.getAddress(address), abi: contractABI.abi, chainId: Number(chainId) };
 }
 
 async function getSBTContractInfo(chainId) {
@@ -73,7 +73,7 @@ async function getSBTContractInfo(chainId) {
     if (!code || code === "0x") {
         throw new Error(`No SBT contract deployed at ${address} on network ${chainId}.`);
     }
-    return { address, abi: sbtABI.abi, chainId: Number(chainId) };
+    return { address: ethers.getAddress(address), abi: sbtABI.abi, chainId: Number(chainId) };
 }
 
 // ── Read-only verification ──────────────────────────────────────────────────

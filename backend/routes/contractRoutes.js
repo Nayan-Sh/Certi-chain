@@ -146,11 +146,13 @@ router.post("/register", async (req, res) => {
 
   try {
     const configId = chainId ? chainId.toString() : "singleton";
+    const normalizedCertAddress = ethers.getAddress(certAddress);
+    const normalizedSbtAddress = ethers.getAddress(sbtAddress);
     const config = await ContractConfig.findByIdAndUpdate(
       configId,
       {
-        certAddress: ethers.getAddress(certAddress),
-        sbtAddress: ethers.getAddress(sbtAddress),
+        certAddress: normalizedCertAddress,
+        sbtAddress: normalizedSbtAddress,
         certTxHash: certTxHash || null,
         sbtTxHash: sbtTxHash || null,
         deployedBy: req.user?.email || "admin",
@@ -159,6 +161,7 @@ router.post("/register", async (req, res) => {
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+    console.log(`[Contract] Registered: certAddress=${normalizedCertAddress} sbtAddress=${normalizedSbtAddress} chainId=${Number(chainId) || 'N/A'}`);
     res.json({ success: true, config });
   } catch (err) {
     res.status(500).json({ error: "Failed to save contract config", details: err.message });

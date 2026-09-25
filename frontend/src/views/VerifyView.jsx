@@ -112,7 +112,7 @@ function VerifyView({ showToast, wallet, contract }) {
       const cleanId = certId.trim();
       const res = await api.get(`/api/verify/${cleanId}`, { params: fileHash ? { fileHash } : {} });
       const newResult = {
-        status: res.data.hashMatch === true ? 'VERIFIED' : res.data.hashMatch === false ? 'TAMPERED' : 'FOUND_NO_FILE',
+        status: res.data.verified === true && res.data.hashMatch === true ? 'VERIFIED' : res.data.verified === true && res.data.hashMatch === false ? 'TAMPERED' : 'FOUND_NO_FILE',
         ...res.data,
         computedHash: fileHash,
         verifiedAt: new Date().toISOString(),
