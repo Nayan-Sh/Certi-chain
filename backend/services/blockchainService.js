@@ -25,25 +25,27 @@ function getProvider(chainId) {
 async function getRegisteredAddresses(chainId) {
     const requestedChainId = Number(chainId);
     try {
-        let config = await ContractConfig.findOne({ 
-            $or: [{ _id: requestedChainId.toString() }, { _id: requestedChainId }] 
+        let config = await ContractConfig.findOne({
+            $or: [{ _id: requestedChainId.toString() }, { _id: requestedChainId }]
         }).lean();
         if (!config) {
             config = await ContractConfig.findById("singleton").lean();
         }
         if (config && config.certAddress && config.sbtAddress) {
-            console.log(`[Blockchain] Resolved from MongoDB: certAddress=${config.certAddress} sbtAddress=${config.sbtAddress} chainId=${requestedChainId}`);
-            return { certAddress: config.certAddress, sbtAddress: config.sbtAddress };
+            // Normalize addresses to checksummed format
+            const normalizedCertAddress = ethers.getAddress(config.certAddress);
+            const normalizedSbtAddress = ethers.getAddress(config.sbtAddress);
+            console.log(`[Blockchain] ✓ Resolved from MongoDB: certAddress=${normalizedCertAddress} sbtAddress=${normalizedSbtAddress} chainId=${requestedChainId}`);
+            return { certAddress: normalizedCertAddress, sbtAddress: normalizedSbtAddress };
         } else {
-            console.warn(`[Blockchain] No ContractConfig in MongoDB (or missing addresses) for chainId=${requestedChainId} — falling back to .env`);
+            console.warn(`[Blockchain] No ContractConfig in MongoDB for chainId=${requestedChainId}`);
         }
     } catch (err) {
-        console.warn(`[Blockchain] DB unavailable when resolving addresses: ${err.message} — falling back to .env`);
+        console.warn(`[Blockchain] DB error: ${err.message}`);
     }
-    const certAddress = process.env.CONTRACT_ADDRESS;
-    const sbtAddress = process.env.SBT_CONTRACT_ADDRESS;
-    console.log(`[Blockchain] .env fallback: certAddress=${certAddress} sbtAddress=${sbtAddress} chainId=${requestedChainId}`);
-    return { certAddress, sbtAddress };
+
+    // CRITICAL: If no database entry, FAIL - do not use .env fallback
+    throw new Error(`No contracts deployed for chainId ${requestedChainId}. Please deploy contracts first via the Deploy Contracts panel.`);
 }
 
 // Verify live code actually sits at the address on the target network before
