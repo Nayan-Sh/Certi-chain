@@ -6,7 +6,7 @@ const mongoose = require("mongoose");
 // and read by blockchainService on every chain call, with backend/.env as a
 // fallback. Because the document `_id` is fixed, upserting keeps exactly one row.
 const contractConfigSchema = new mongoose.Schema({
-    _id: { type: String, default: "singleton" },
+    _id: { type: String },
     certAddress: { type: String, required: true },
     sbtAddress: { type: String, required: true },
     certTxHash: String,

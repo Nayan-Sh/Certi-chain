@@ -25,18 +25,17 @@ function getProvider(chainId) {
 async function getRegisteredAddresses(chainId) {
     const requestedChainId = Number(chainId);
     try {
-        const config = await ContractConfig.findById("singleton").lean();
+        let config = await ContractConfig.findOne({ 
+            $or: [{ _id: requestedChainId.toString() }, { _id: requestedChainId }] 
+        }).lean();
+        if (!config) {
+            config = await ContractConfig.findById("singleton").lean();
+        }
         if (config && config.certAddress && config.sbtAddress) {
-            const configChainId = config.chainId != null ? Number(config.chainId) : null;
-            const isDefaultNetwork = requestedChainId === 11155111;
-            if (configChainId === requestedChainId || (configChainId === null && isDefaultNetwork)) {
-                console.log(`[Blockchain] Resolved from MongoDB: certAddress=${config.certAddress} sbtAddress=${config.sbtAddress} chainId=${requestedChainId}`);
-                return { certAddress: config.certAddress, sbtAddress: config.sbtAddress };
-            } else {
-                console.warn(`[Blockchain] MongoDB record chainId=${configChainId} does not match requested chainId=${requestedChainId} — falling back to .env`);
-            }
+            console.log(`[Blockchain] Resolved from MongoDB: certAddress=${config.certAddress} sbtAddress=${config.sbtAddress} chainId=${requestedChainId}`);
+            return { certAddress: config.certAddress, sbtAddress: config.sbtAddress };
         } else {
-            console.warn(`[Blockchain] No ContractConfig in MongoDB (or missing addresses) — falling back to .env for chainId=${requestedChainId}`);
+            console.warn(`[Blockchain] No ContractConfig in MongoDB (or missing addresses) for chainId=${requestedChainId} — falling back to .env`);
         }
     } catch (err) {
         console.warn(`[Blockchain] DB unavailable when resolving addresses: ${err.message} — falling back to .env`);

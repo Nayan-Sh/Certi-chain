@@ -64,8 +64,20 @@ router.get("/artifact/:name", (req, res) => {
 
 // GET /api/contract/status  →  currently registered deployment (or empty)
 router.get("/status", async (req, res) => {
+  const { chainId } = req.query;
   try {
-    const config = await ContractConfig.findById("singleton").lean();
+    let config;
+    if (chainId) {
+        config = await ContractConfig.findOne({ 
+            $or: [{ _id: chainId.toString() }, { _id: Number(chainId) }] 
+        }).lean();
+        if (!config) {
+            config = await ContractConfig.findById("singleton").lean();
+        }
+    } else {
+        // Fallback for general status check
+        config = await ContractConfig.findOne().lean();
+    }
     res.json({ deployed: !!config, config: config || null });
   } catch (err) {
     res.status(500).json({ error: "Failed to read contract config", details: err.message });
@@ -133,8 +145,9 @@ router.post("/register", async (req, res) => {
   }
 
   try {
+    const configId = chainId ? chainId.toString() : "singleton";
     const config = await ContractConfig.findByIdAndUpdate(
-      "singleton",
+      configId,
       {
         certAddress: ethers.getAddress(certAddress),
         sbtAddress: ethers.getAddress(sbtAddress),

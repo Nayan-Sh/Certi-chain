@@ -19,6 +19,11 @@ export default function Login({ setUserRole, showToast }) {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const googleBtnRef = useRef(null);
   const googleInitialized = useRef(false);
+  const latestRole = useRef(role);
+
+  useEffect(() => {
+    latestRole.current = role;
+  }, [role]);
 
   // Initialize Google Identity Services button
   useEffect(() => {
@@ -57,7 +62,7 @@ export default function Login({ setUserRole, showToast }) {
   const handleGoogleAuth = async (credential) => {
     setIsGoogleLoading(true);
     try {
-      const res = await authApi.googleAuth(credential, role, undefined, true);
+      const res = await authApi.googleAuth(credential, latestRole.current, undefined, true);
       localStorage.setItem('certifychain_token', res.data.token);
       localStorage.setItem('certifychain_user', JSON.stringify(res.data.user));
       setUserRole(res.data.user.role || 'student');

@@ -182,7 +182,7 @@ export default function ContractDeploy({ showToast, userRole }) {
         config: data.config,
       });
       showToast('Contracts deployed & registered successfully!', 'success');
-      await loadStatus();
+      await loadStatus(selectedChainId);
     } catch (err) {
       setError(
         'Deployment failed: ' + (err.response?.data?.error || err.message || 'unknown error')
