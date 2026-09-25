@@ -114,6 +114,8 @@ async function verifyTxReceipt(txHash, chainId, expectedTo, expectedFrom) {
         throw new Error("Invalid transaction hash.");
     }
 
+    console.log(`[Blockchain] verifyTxReceipt: txHash=${txHash}, chainId=${chainId}, expectedTo=${expectedTo}, expectedFrom=${expectedFrom}`);
+
     const provider = getProvider(chainId);
     const receipt = await provider.getTransactionReceipt(txHash);
 
@@ -128,11 +130,13 @@ async function verifyTxReceipt(txHash, chainId, expectedTo, expectedFrom) {
     const normalizedReceiptTo = receipt.to ? ethers.getAddress(receipt.to) : null;
     const normalizedExpectedTo = expectedTo ? ethers.getAddress(expectedTo) : null;
 
+    console.log(`[Blockchain] Receipt details: to=${normalizedReceiptTo}, from=${receipt.from}, gasUsed=${receipt.gasUsed}, blockNumber=${receipt.blockNumber}`);
+
     if (!normalizedExpectedTo) {
         throw new Error("No contract address provided for verification.");
     }
     if (!normalizedReceiptTo || normalizedReceiptTo !== normalizedExpectedTo) {
-        console.error(`[Blockchain] Address mismatch: receipt.to=${normalizedReceiptTo}, expected=${normalizedExpectedTo}, txHash=${txHash}, chainId=${chainId}`);
+        console.error(`[Blockchain] ❌ ADDRESS MISMATCH: receipt.to=${normalizedReceiptTo} !== expected=${normalizedExpectedTo}`);
         throw new Error(`Transaction did not target the registered contract. Expected: ${normalizedExpectedTo}, Got: ${normalizedReceiptTo}`);
     }
 
@@ -140,6 +144,7 @@ async function verifyTxReceipt(txHash, chainId, expectedTo, expectedFrom) {
         throw new Error("Transaction was not signed by the reported wallet.");
     }
 
+    console.log(`[Blockchain] ✓ Receipt verified: transaction successfully targeted contract ${normalizedReceiptTo}`);
     return receipt;
 }
 

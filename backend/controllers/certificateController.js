@@ -342,8 +342,11 @@ async function recordMint(req, res) {
         }
 
         // Confirm the reported tx really minted on the registered contract.
+        console.log(`[Record Mint] Verifying ${records.length} certificates. txHash=${txHash}, chainId=${chainId}, admin=${adminAddress}`);
         const { address: certAddress } = await getCertificateContractInfo(chainId);
+        console.log(`[Record Mint] Expected contract address: ${certAddress}`);
         await verifyTxReceipt(txHash, chainId, certAddress, adminAddress);
+        console.log(`[Record Mint] ✓ Transaction verified successfully against contract ${certAddress}`);
 
         // Pre-flight validation (Fix #4): read back the first record to ensure
         // the ID string signed via MetaMask exactly matches our DB string.

@@ -140,12 +140,17 @@ export function useContract() {
         try {
             // Use FRESH contract info immediately before signing
             const { certAddress, certAbi } = await getFreshContractInfo(chainId);
+            console.log(`[useContract] Signing issue() to contract: ${certAddress} on chainId=${chainId}`);
             const signer = await getSigner();
+            const signerAddr = await signer.getAddress();
+            console.log(`[useContract] Signer: ${signerAddr}`);
             const contract = new ethers.Contract(certAddress, certAbi, signer);
             const tx = await contract.issueCertificate(
                 id, studentName, course, orgName, ipfsHash, fileHash
             );
-            await tx.wait();
+            console.log(`[useContract] Transaction sent: ${tx.hash}, waiting for confirmation...`);
+            const receipt = await tx.wait();
+            console.log(`[useContract] Transaction confirmed. Target: ${receipt.to}, Hash: ${tx.hash}`);
             return tx.hash;
         } catch (err) {
             throw new Error(formatContractError(err));
@@ -156,12 +161,18 @@ export function useContract() {
         try {
             // Use FRESH contract info immediately before signing
             const { certAddress, certAbi } = await getFreshContractInfo(chainId);
+            console.log(`[useContract] Signing batchIssueCertificates() to contract: ${certAddress} on chainId=${chainId}`);
+            console.log(`[useContract] Batch size: ${ids.length} certificates`);
             const signer = await getSigner();
+            const signerAddr = await signer.getAddress();
+            console.log(`[useContract] Signer: ${signerAddr}`);
             const contract = new ethers.Contract(certAddress, certAbi, signer);
             const tx = await contract.batchIssueCertificates(
                 ids, names, courses, orgs, ipfsHashes, fileHashes
             );
-            await tx.wait();
+            console.log(`[useContract] Batch transaction sent: ${tx.hash}, waiting for confirmation...`);
+            const receipt = await tx.wait();
+            console.log(`[useContract] Batch transaction confirmed. Target: ${receipt.to}, Hash: ${tx.hash}`);
             return tx.hash;
         } catch (err) {
             throw new Error(formatContractError(err));
