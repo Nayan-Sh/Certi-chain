@@ -4,9 +4,12 @@ const router = express.Router();
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://127.0.0.1:5001";
 
-// Proxy organization-training calls to the AI service. The dApp's "AI Training"
-// panel uses these endpoints, which the backend forwards to the Python forensic
-// service (which owns known_organizations.json). Admins only.
+const authMiddleware = require("../middleware/authMiddleware");
+const { requireRole } = require("../middleware/authMiddleware");
+
+// Enforce admin-only access for AI organization registry endpoints
+router.use(authMiddleware);
+router.use(requireRole("admin"));
 router.get("/organizations", async (req, res) => {
   try {
     const { data } = await axios.get(`${AI_SERVICE_URL}/organizations`, { timeout: 10000 });

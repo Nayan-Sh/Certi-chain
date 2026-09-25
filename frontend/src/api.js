@@ -20,12 +20,28 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
-    const config = err.config;
+    const config = err.config || {};
     if (!err.response && !config._retried) {
       config._retried = true;
       await new Promise((r) => setTimeout(r, 1200));
       return api(config);
     }
+
+    // Normalize error for UI consumption
+    if (!err.response) {
+      err.response = {
+        data: {
+          error: "NETWORK_ERROR",
+          message: "Could not reach the server. Please check your connection."
+        }
+      };
+    } else if (err.response.status >= 500) {
+      err.response.data = err.response.data || {};
+      if (!err.response.data.message && !err.response.data.error) {
+        err.response.data.message = `An unexpected server error occurred (${err.response.status}).`;
+      }
+    }
+
     return Promise.reject(err);
   }
 );
@@ -51,7 +67,7 @@ export const authApi = {
 
   login: (identifier, password, role) => api.post('/api/auth/login', { identifier, password, role }),
   checkEmail: (email) => api.get('/api/auth/check-email', { params: { email } }),
-  googleAuth: (credential, role, inviteCode) => api.post('/api/auth/google', { credential, role, inviteCode }),
+  googleAuth: (credential, role, inviteCode, isLogin = false) => api.post('/api/auth/google', { credential, role, inviteCode, isLogin }),
 };
 
 // ── History helpers ───────────────────────────────────────────────────────

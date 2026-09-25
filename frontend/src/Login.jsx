@@ -57,7 +57,7 @@ export default function Login({ setUserRole, showToast }) {
   const handleGoogleAuth = async (credential) => {
     setIsGoogleLoading(true);
     try {
-      const res = await authApi.googleAuth(credential);
+      const res = await authApi.googleAuth(credential, role, undefined, true);
       localStorage.setItem('certifychain_token', res.data.token);
       localStorage.setItem('certifychain_user', JSON.stringify(res.data.user));
       setUserRole(res.data.user.role || 'student');
@@ -106,11 +106,14 @@ export default function Login({ setUserRole, showToast }) {
 
       localStorage.setItem('certifychain_token', res.data.token);
       localStorage.setItem('certifychain_user', JSON.stringify(res.data.user));
-      setUserRole(res.data.user.role || 'admin');
+      setUserRole(res.data.user.role);  // use exact role from server, never default to 'admin'
       navigate('/dashboard');
-      showToast(`Welcome back, ${res.data.user.fullName || res.data.user.name || 'Admin'}!`, 'success');
+      showToast(`Welcome back, ${res.data.user.fullName || res.data.user.name || res.data.user.email}!`, 'success');
     } catch (err) {
       const msg = err.response?.data?.message || err.response?.data?.error || 'Login failed';
+      if (err.response?.status === 404 || msg.toLowerCase().includes('no user found') || msg.toLowerCase().includes('sign up first')) {
+        setErrors(prev => ({ ...prev, identifier: msg }));
+      }
       showToast(msg, 'error');
     } finally {
       setIsSubmitting(false);

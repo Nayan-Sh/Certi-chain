@@ -210,8 +210,8 @@ function IssueView({ showToast, wallet, contract }) {
   };
 
   const handleSingleIssue = async () => {
-    if (!file || !form.id) {
-      showToast('Upload a file and fill all fields!', 'warning');
+    if (!file) {
+      showToast('Please upload a PDF certificate file!', 'warning');
       return;
     }
     if (!wallet.isConnected) {
@@ -345,16 +345,18 @@ function IssueView({ showToast, wallet, contract }) {
               Certificate Details
             </h4>
 
-            <div style={{ position: 'relative', marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Certificate ID
-              </label>
-              <div style={{ position: 'relative' }}>
-                <input className="input-3d" value={form.id} placeholder="Auto-generated or enter custom ID" onChange={(e) => upd('id', e.target.value)} style={{ paddingRight: '120px' }} />
-                <button onClick={() => upd('id', genId())} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,242,254,0.1)', border: '1px solid var(--accent-cyan)', color: 'var(--accent-cyan)', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }} onMouseOver={(e) => (e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)')} onMouseOut={(e) => (e.currentTarget.style.transform = 'translateY(-50%) scale(1)')}>
-                  <Sparkles size={12} /> Auto-Generate
-                </button>
+            <div style={{ marginBottom: '16px', padding: '12px 16px', background: 'rgba(0, 242, 254, 0.04)', border: '1px dashed rgba(0, 242, 254, 0.3)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Certificate ID
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Cryptographically and sequentially assigned upon minting (no manual input required)
+                </div>
               </div>
+              <span style={{ fontSize: '11px', fontWeight: 700, background: 'rgba(0,242,254,0.12)', color: 'var(--accent-cyan)', padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,242,254,0.3)' }}>
+                AUTO-ASSIGNED
+              </span>
             </div>
 
             <input className="input-3d" placeholder="Student Name" value={form.studentName} onChange={(e) => upd('studentName', e.target.value)} />

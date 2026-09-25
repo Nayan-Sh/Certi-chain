@@ -14,4 +14,20 @@ export const NETWORKS = {
         nativeCurrency: { name: "Sepolia ETH", symbol: "SepETH", decimals: 18 },
         blockExplorerUrls: ["https://sepolia.etherscan.io"],
     },
+    31337: {
+        name: "Hardhat Localhost",
+        chainId: 31337,
+        chainIdHex: "0x7a69",
+        rpcUrl: "http://127.0.0.1:8545",
+        nativeCurrency: { name: "Hardhat ETH", symbol: "ETH", decimals: 18 },
+        blockExplorerUrls: ["http://127.0.0.1:8545"],
+    },
+    1337: {
+        name: "Localhost 1337",
+        chainId: 1337,
+        chainIdHex: "0x539",
+        rpcUrl: "http://127.0.0.1:8545",
+        nativeCurrency: { name: "Local ETH", symbol: "ETH", decimals: 18 },
+        blockExplorerUrls: ["http://127.0.0.1:8545"],
+    },
 };

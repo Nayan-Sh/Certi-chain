@@ -16,12 +16,14 @@ const userSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    required: false, // Optional for Google OAuth users
+    required: false,
     trim: true,
+    default: null,
   },
   password: {
     type: String,
-    required: false, // Optional for Google OAuth users
+    required: false, // null for Google OAuth users
+    default: null,
   },
   isVerified: {
     type: Boolean,

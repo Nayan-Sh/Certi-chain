@@ -81,6 +81,25 @@ async function analyzeFiles(files, metadata, orgName) {
         const fileBuffer = fs.readFileSync(filePath);
         const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
+        // Check PDF Magic Bytes (%PDF-)
+        const magicBytes = fileBuffer.slice(0, 5).toString('ascii');
+        if (magicBytes !== '%PDF-') {
+            results.push({
+                fileName: file.originalname,
+                studentName: file.originalname,
+                course: 'N/A',
+                fileHash,
+                status: 'INVALID_FORMAT',
+                error: 'File is not a valid PDF document (magic bytes mismatch).',
+                aiScore: 0,
+                aiDetails: {},
+                passed: false
+            });
+            rejectedCount++;
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            continue;
+        }
+
         // Validate single page and corruption
         const validation = await validateSinglePagePDF(fileBuffer);
         if (!validation.isValid) {
@@ -409,6 +428,13 @@ exports.prepareSingle = async (req, res) => {
         if (req.file.mimetype !== "application/pdf" && req.file.mimetype !== "application/x-pdf" && req.file.mimetype !== "application/octet-stream") {
             fs.unlinkSync(filePath);
             return res.status(400).json({ success: false, error: "INVALID_FORMAT", message: "Only PDF files are allowed." });
+        }
+
+        // Check PDF Magic Bytes (%PDF-)
+        const magicBytes = fileBuffer.slice(0, 5).toString('ascii');
+        if (magicBytes !== '%PDF-') {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({ success: false, error: "INVALID_FORMAT", message: "File is not a valid PDF document (magic bytes mismatch)." });
         }
 
         const validation = await validateSinglePagePDF(fileBuffer);

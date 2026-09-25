@@ -62,7 +62,15 @@ exports.sendOtp = async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required.' });
 
-    const result = await sendOTPEmail(email.trim().toLowerCase());
+    const emailLower = email.trim().toLowerCase();
+
+    // Check if the email is already registered to prevent OTP spam and warn the user
+    const existingUser = await User.findOne({ email: emailLower });
+    if (existingUser) {
+      return res.status(409).json({ error: `This email is already registered as a ${existingUser.role}.` });
+    }
+
+    const result = await sendOTPEmail(emailLower);
 
     const response = { message: 'OTP sent successfully.' };
     // In dev/fallback mode, return the code to show in toast
@@ -119,18 +127,23 @@ exports.register = async (req, res) => {
     // Check duplicates
     const existingEmail = await User.findOne({ email: emailLower });
     if (existingEmail) {
-      return res.status(409).json({ error: 'An account with this email already exists.' });
+      return res.status(409).json({ error: `This email is already registered as a ${existingEmail.role}.` });
     }
-    const existingPhone = await User.findOne({ phone });
-    if (existingPhone) {
-      return res.status(409).json({ error: 'An account with this phone number already exists.' });
+    // Only check phone uniqueness when a real phone value is provided
+    // (null/empty phones are allowed for Google OAuth users and must not be compared)
+    const trimmedPhone = phone?.trim() || null;
+    if (trimmedPhone) {
+      const existingPhone = await User.findOne({ phone: trimmedPhone });
+      if (existingPhone) {
+        return res.status(409).json({ error: 'An account with this phone number already exists.' });
+      }
     }
 
     // Build user object
     const userData = {
       role,
       email: emailLower,
-      phone,
+      phone: trimmedPhone, // null if not provided (safe for sparse indexes)
       password,
       isVerified: true,
     };
@@ -175,7 +188,13 @@ exports.register = async (req, res) => {
   } catch (err) {
     console.error('register error:', err);
     if (err.code === 11000) {
-      return res.status(409).json({ error: 'Email or phone already registered.' });
+      // Parse which field caused the duplicate key violation
+      const keyPattern = err.keyPattern || {};
+      if (keyPattern.email) return res.status(409).json({ error: 'This email is already registered.' });
+      if (keyPattern.phone) return res.status(409).json({ error: 'This phone number is already registered.' });
+      if (keyPattern.adminId) return res.status(409).json({ error: 'This Admin ID is already in use.' });
+      if (keyPattern.rollNumber) return res.status(409).json({ error: 'This roll number is already registered.' });
+      return res.status(409).json({ error: 'An account with these details already exists.' });
     }
     res.status(500).json({ error: 'Registration failed. Please try again.' });
   }
@@ -225,7 +244,7 @@ exports.login = async (req, res) => {
       // Record failure with a generic key based on identifier+IP
       const key = attemptKey(lowerIdentifier, req.ip);
       recordFailure(key);
-      return res.status(401).json({ error: 'No account found with these credentials.' });
+      return res.status(404).json({ error: 'No user found. Please sign up first.' });
     }
 
     // Now use the actual email for brute-force protection
@@ -294,7 +313,7 @@ exports.checkEmail = async (req, res) => {
 // Google OAuth login / signup
 exports.googleAuth = async (req, res) => {
   try {
-    const { credential, role, inviteCode } = req.body; // Google ID token from frontend
+    const { credential, role, inviteCode, isLogin } = req.body; // Google ID token from frontend
 
     if (!credential) {
       return res.status(400).json({ error: 'Google credential is required.' });
@@ -323,12 +342,19 @@ exports.googleAuth = async (req, res) => {
     let user = await User.findOne({ email: emailLower });
 
     if (user) {
+      // If user is trying to sign up, but account already exists, reject with 409
+      if (!isLogin) {
+        return res.status(409).json({
+          error: `This email is already registered as a ${user.role}. Please log in instead.`
+        });
+      }
+
       if (role && user.role !== role) {
         return res.status(403).json({
           error: `This account is registered as a ${user.role}. Please use the ${user.role} login.`,
         });
       }
-      // Existing user - link Google ID if not already linked
+      // Existing user logging in - link Google ID if not already linked
       if (!user.googleId) {
         user.googleId = googleId;
         await user.save();
@@ -339,7 +365,14 @@ exports.googleAuth = async (req, res) => {
         await user.save();
       }
     } else {
-      // New user - create account
+      // User not found in database
+      if (isLogin) {
+        return res.status(404).json({
+          error: 'No user found. Please sign up first before logging in.'
+        });
+      }
+
+      // New user - create account during signup
       const requestedRole = role || 'student';
       if (requestedRole === 'admin') {
         if (!inviteCode || inviteCode !== process.env.ADMIN_INVITE_CODE) {
@@ -352,8 +385,8 @@ exports.googleAuth = async (req, res) => {
         googleId,
         isVerified: true,
         fullName: name || null,
-        phone: '', // Empty for Google OAuth users
-        password: '', // Not used for Google OAuth
+        phone: null,     // null (not empty string) so sparse indexes work correctly
+        password: null,  // Not used for Google OAuth users
       });
     }
 

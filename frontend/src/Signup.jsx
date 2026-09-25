@@ -214,7 +214,7 @@ export default function Signup({ setUserRole, showToast }) {
       startResendTimer();
       showToast('OTP sent to your email', 'success');
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed to send OTP', 'error');
+      showToast(err.response?.data?.message || err.response?.data?.error || 'Failed to send OTP', 'error');
     } finally {
       setIsSubmitting(false);
     }

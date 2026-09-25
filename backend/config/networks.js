@@ -17,6 +17,20 @@ const NETWORKS = {
         symbol: "SepETH",
         blockExplorer: "https://sepolia.etherscan.io",
     },
+    31337: {
+        name: "Hardhat Localhost",
+        chainId: 31337,
+        rpc: process.env.LOCAL_RPC_URL || "http://127.0.0.1:8545",
+        symbol: "ETH",
+        blockExplorer: "http://127.0.0.1:8545",
+    },
+    1337: {
+        name: "Localhost 1337",
+        chainId: 1337,
+        rpc: process.env.LOCAL_RPC_URL || "http://127.0.0.1:8545",
+        symbol: "ETH",
+        blockExplorer: "http://127.0.0.1:8545",
+    },
 };
 
 /**

@@ -41,7 +41,26 @@ async function main() {
   const sbt = await SoulboundCertificate.deploy();
   await sbt.waitForDeployment();
 
-  // 3. Log + sync the live addresses into the backend .env
+  // 3. Copy freshly compiled artifacts to backend/abis
+  const artifactsDir = path.resolve(__dirname, "../artifacts/contracts");
+  const backendAbisDir = path.resolve(__dirname, "../../backend/abis");
+  if (fs.existsSync(backendAbisDir)) {
+    try {
+      fs.copyFileSync(
+        path.join(artifactsDir, "Certificate.sol/Certificate.json"),
+        path.join(backendAbisDir, "Certificate.json")
+      );
+      fs.copyFileSync(
+        path.join(artifactsDir, "SoulboundCertificate.sol/SoulboundCertificate.json"),
+        path.join(backendAbisDir, "SoulboundCertificate.json")
+      );
+      console.log("[deploy] Synced latest ABIs to backend/abis/");
+    } catch (e) {
+      console.warn("[deploy] Warning syncing ABIs:", e.message);
+    }
+  }
+
+  // 4. Log + sync the live addresses into the backend .env
   const certAddr = await certificate.getAddress();
   const sbtAddr = await sbt.getAddress();
   console.log("-----------------------------------------------");
@@ -49,7 +68,6 @@ async function main() {
   console.log("Soulbound NFT (SBT) deployed to:", sbtAddr);
   console.log("-----------------------------------------------");
 
-  // deploy.js lives in blockchain/scripts/, so the backend .env is two levels up.
   setEnvValue("../../backend/.env", "CONTRACT_ADDRESS", certAddr);
   setEnvValue("../../backend/.env", "SBT_CONTRACT_ADDRESS", sbtAddr);
 }
