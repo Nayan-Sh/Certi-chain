@@ -144,7 +144,7 @@ function IssueView({ showToast, wallet, contract }) {
     try {
       await contract.getFreshContractInfo(wallet.chainId);
     } catch (e) {
-      showToast(e.message, 'error');
+      showToast(`Failed to fetch contract info: ${e.message}`, 'error');
       return;
     }
 
@@ -187,7 +187,7 @@ function IssueView({ showToast, wallet, contract }) {
         chainId: wallet.chainId,
         adminAddress: wallet.account,
         records,
-      });
+      }, { timeout: 45000 });
 
       setBatchProgress(100);
       if (res.data.success) {
@@ -214,6 +214,8 @@ function IssueView({ showToast, wallet, contract }) {
         setBatchToken(null);
         setReviewRows([]);
         showToast('Batch session expired — please analyze the files again', 'error');
+      } else if (err.code === 'ECONNABORTED' || err.message?.includes('Network')) {
+        showToast('Network error during minting. Please check your connection and try again.', 'error');
       } else {
         showToast('Mint failed: ' + (errData?.message || errData?.error || err.message), 'error');
       }
@@ -236,7 +238,7 @@ function IssueView({ showToast, wallet, contract }) {
     try {
       await contract.getFreshContractInfo(wallet.chainId);
     } catch (e) {
-      showToast(e.message, 'error');
+      showToast(`Failed to fetch contract info: ${e.message}`, 'error');
       return;
     }
 
@@ -274,7 +276,7 @@ function IssueView({ showToast, wallet, contract }) {
         chainId: wallet.chainId,
         adminAddress: wallet.account,
         records: [rec],
-      });
+      }, { timeout: 45000 });
 
       if (res.data.success) {
         setResult({
@@ -310,6 +312,8 @@ function IssueView({ showToast, wallet, contract }) {
           ai_message: aiData.message,
         });
         showToast(errData.message || 'Certificate rejected by AI analysis', 'error');
+      } else if (err.code === 'ECONNABORTED' || err.message?.includes('Network')) {
+        showToast('Network error during minting. Please check your connection and try again.', 'error');
       } else {
         showToast('Error: ' + (errData?.message || errData?.error || err.message), 'error');
       }

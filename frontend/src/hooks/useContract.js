@@ -50,20 +50,34 @@ export function useContract() {
         }
 
         console.log(`[useContract] Fetching fresh contract info for chainId=${key}`);
-        const res = await api.get(`/api/contract/info?chainId=${key}`);
-        const info = res.data;
-        if (!info.certAddress) {
-            throw new Error(
-                `Contracts not deployed on this network (chain ${key}). Open the Deploy Contracts panel and deploy first.`
-            );
+        try {
+            const res = await api.get(`/api/contract/info?chainId=${key}`);
+            const info = res.data;
+            if (!info.certAddress) {
+                throw new Error(
+                    `Contracts not deployed on this network (chain ${key}). Open the Deploy Contracts panel and deploy first.`
+                );
+            }
+
+            // Store in cache with timestamp
+            cacheRef.current[key] = info;
+            cacheTimestampsRef.current[key] = Date.now();
+            console.log(`[useContract] Cached contract info for chainId=${key}`);
+
+            return info;
+        } catch (err) {
+            console.error(`[useContract] Error fetching contract info:`, err);
+            if (err.response?.status === 404) {
+                throw new Error(`No contracts deployed on chain ${key}. Please deploy contracts first.`);
+            } else if (err.response?.status === 500) {
+                throw new Error(`Server error while fetching contract info. Please try again.`);
+            } else if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+                throw new Error(`Network timeout fetching contract info. Check your connection and try again.`);
+            } else if (!err.response) {
+                throw new Error(`Network error: ${err.message}. Please check your internet connection.`);
+            }
+            throw err;
         }
-
-        // Store in cache with timestamp
-        cacheRef.current[key] = info;
-        cacheTimestampsRef.current[key] = Date.now();
-        console.log(`[useContract] Cached contract info for chainId=${key}`);
-
-        return info;
     }, [isCacheValid]);
 
     /**
@@ -108,9 +122,13 @@ export function useContract() {
         }
     }, []);
 
-    const getSigner = async () => {
+    const getSigner = async (expectedChainId) => {
         if (!window.ethereum) throw new Error('MetaMask is not installed');
         const provider = new ethers.BrowserProvider(window.ethereum);
+        const network = await provider.getNetwork();
+        if (expectedChainId && Number(network.chainId) !== Number(expectedChainId)) {
+            throw new Error(`MetaMask is connected to chain ${network.chainId}, but this contract is registered on chain ${expectedChainId}. Switch networks and try again.`);
+        }
         return provider.getSigner();
     };
 
@@ -150,7 +168,7 @@ export function useContract() {
             // Use FRESH contract info immediately before signing
             const { certAddress, certAbi } = await getFreshContractInfo(chainId);
             console.log(`[useContract] Signing issue() to contract: ${certAddress} on chainId=${chainId}`);
-            const signer = await getSigner();
+            const signer = await getSigner(chainId);
             const signerAddr = await signer.getAddress();
             console.log(`[useContract] Signer: ${signerAddr}`);
             const contract = new ethers.Contract(certAddress, certAbi, signer);
@@ -172,7 +190,7 @@ export function useContract() {
             const { certAddress, certAbi } = await getFreshContractInfo(chainId);
             console.log(`[useContract] Signing batchIssueCertificates() to contract: ${certAddress} on chainId=${chainId}`);
             console.log(`[useContract] Batch size: ${ids.length} certificates`);
-            const signer = await getSigner();
+            const signer = await getSigner(chainId);
             const signerAddr = await signer.getAddress();
             console.log(`[useContract] Signer: ${signerAddr}`);
             const contract = new ethers.Contract(certAddress, certAbi, signer);
@@ -215,7 +233,7 @@ export function useContract() {
         try {
             // Use FRESH contract info immediately before signing
             const { certAddress, certAbi } = await getFreshContractInfo(chainId);
-            const signer = await getSigner();
+            const signer = await getSigner(chainId);
             const contract = new ethers.Contract(certAddress, certAbi, signer);
             const tx = await contract.revokeCertificate(certId);
             await tx.wait();
@@ -231,7 +249,7 @@ export function useContract() {
         try {
             // Use FRESH contract info immediately before signing
             const { sbtAddress, sbtAbi } = await getFreshContractInfo(chainId);
-            const signer = await getSigner();
+            const signer = await getSigner(chainId);
             const contract = new ethers.Contract(sbtAddress, sbtAbi, signer);
             const uri = `ipfs://${ipfsHash}`;
             const tx = await contract.issueSBT(studentAddress, certId, uri);

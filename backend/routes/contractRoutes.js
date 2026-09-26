@@ -72,7 +72,9 @@ router.get("/status", async (req, res) => {
             $or: [{ _id: chainId.toString() }, { _id: Number(chainId) }] 
         }).lean();
         if (!config) {
-            config = await ContractConfig.findById("singleton").lean();
+            const singleton = await ContractConfig.findById("singleton").lean();
+            if (singleton && (Number(singleton.chainId) === Number(chainId) ||
+                (!singleton.chainId && Number(chainId) === 11155111))) config = singleton;
         }
     } else {
         // Fallback for general status check
@@ -97,6 +99,8 @@ router.get("/info", async (req, res) => {
     const sbtInfo = await getSBTContractInfo(Number(chainId));
     console.log(`[ContractRoutes] Returning certAddress=${certInfo.address}, sbtAddress=${sbtInfo.address}`);
 
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     res.json({
       certAddress: certInfo.address,
       certAbi: certInfo.abi,
@@ -118,17 +122,13 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ error: "Invalid contract address (must be a valid 0x… address)." });
   }
 
-  // Confirm live code actually sits at both addresses on the configured RPC,
-  // so we never persist a stale/empty address that would break the backend.
-  let rpcUrl = process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
-  if (Number(chainId) === 11155111) {
-    rpcUrl = process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
-  } else if (Number(chainId) === 1 || Number(chainId) === 137) {
-    // Add fallback for other common networks if needed, or use a general RPC
-  }
-
+  // Confirm live code actually sits at both addresses on the target network.
+  // Skip rather than fail registration if the public RPC times out — MetaMask
+  // already mined the deploy tx, so a flaky RPC should not block minting.
   try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const { getNetwork } = require("../config/networks");
+    const net = getNetwork(Number(chainId) || 11155111);
+    const provider = new ethers.JsonRpcProvider(net.rpc, Number(net.chainId), { staticNetwork: true });
     for (const [label, address] of [
       ["Certificate", certAddress],
       ["SoulboundCertificate", sbtAddress],
@@ -136,14 +136,12 @@ router.post("/register", async (req, res) => {
       const code = await provider.getCode(address);
       if (!code || code === "0x") {
         return res.status(400).json({
-          error: `No smart contract code found at ${label} address ${address} on ${rpcUrl}. Deploy first, then register.`,
+          error: `No smart contract code found at ${label} address ${address} on ${net.name}. Deploy first, then register.`,
         });
       }
     }
   } catch (err) {
-    return res.status(503).json({
-      error: `Cannot reach chain at ${rpcUrl}: ${err.message}`,
-    });
+    console.warn(`[Contract] Skipping live bytecode check (RPC unavailable): ${err.message}`);
   }
 
   try {

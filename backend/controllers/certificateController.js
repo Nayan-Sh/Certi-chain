@@ -16,6 +16,9 @@ const {
     verifyOnBlockchain,
     verifyTxReceipt,
     getCertificateContractInfo,
+    CERTIFICATE_ISSUED_TOPIC,
+    CERTIFICATE_REVOKED_TOPIC,
+    SBT_TRANSFER_TOPIC,
     getSBTContractInfo
 } = require("../services/blockchainService");
 
@@ -345,7 +348,7 @@ async function recordMint(req, res) {
         console.log(`[Record Mint] Verifying ${records.length} certificates. txHash=${txHash}, chainId=${chainId}, admin=${adminAddress}`);
         const { address: certAddress } = await getCertificateContractInfo(chainId);
         console.log(`[Record Mint] Expected contract address: ${certAddress}`);
-        await verifyTxReceipt(txHash, chainId, certAddress, adminAddress);
+        await verifyTxReceipt(txHash, chainId, certAddress, adminAddress, CERTIFICATE_ISSUED_TOPIC);
         console.log(`[Record Mint] ✓ Transaction verified successfully against contract ${certAddress}`);
 
         // Pre-flight validation (Fix #4): read back the first record to ensure
@@ -692,7 +695,7 @@ exports.recordRevoke = async (req, res) => {
 
         // Confirm the reported tx really revoked on the registered contract.
         const { address: certAddress } = await getCertificateContractInfo(chainId);
-        await verifyTxReceipt(txHash, chainId, certAddress, adminAddress);
+        await verifyTxReceipt(txHash, chainId, certAddress, adminAddress, CERTIFICATE_REVOKED_TOPIC);
 
         // Mark as revoked in MongoDB for dashboard stats + audit.
         await Certificate.updateOne({ id }, { revoked: true });
@@ -882,7 +885,7 @@ exports.recordClaimSBT = async (req, res) => {
 
         // Confirm the reported tx really minted the SBT on the SBT contract.
         const { address: sbtAddress } = await getSBTContractInfo(chainId);
-        await verifyTxReceipt(txHash, chainId, sbtAddress, studentAddress);
+        await verifyTxReceipt(txHash, chainId, sbtAddress, studentAddress, SBT_TRANSFER_TOPIC);
 
         // Mirror the claim in MongoDB (soulbound NFT is already on-chain).
         await Certificate.updateOne({ id: certId }, { sbtTxHash: txHash });
