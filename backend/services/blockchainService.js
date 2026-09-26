@@ -44,7 +44,14 @@ async function getRegisteredAddresses(chainId) {
         console.warn(`[Blockchain] DB error: ${err.message}`);
     }
 
-    // CRITICAL: If no database entry, FAIL - do not use .env fallback
+    // Safe fallback to .env if DB record is absent but env vars are configured
+    if (process.env.CONTRACT_ADDRESS && process.env.SBT_CONTRACT_ADDRESS && ethers.isAddress(process.env.CONTRACT_ADDRESS) && ethers.isAddress(process.env.SBT_CONTRACT_ADDRESS)) {
+        const certAddress = ethers.getAddress(process.env.CONTRACT_ADDRESS);
+        const sbtAddress = ethers.getAddress(process.env.SBT_CONTRACT_ADDRESS);
+        console.log(`[Blockchain] ⚠️ Fallback to .env: certAddress=${certAddress} sbtAddress=${sbtAddress} chainId=${requestedChainId}`);
+        return { certAddress, sbtAddress };
+    }
+
     throw new Error(`No contracts deployed for chainId ${requestedChainId}. Please deploy contracts first via the Deploy Contracts panel.`);
 }
 

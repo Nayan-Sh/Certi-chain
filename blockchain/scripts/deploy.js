@@ -70,6 +70,54 @@ async function main() {
 
   setEnvValue("../../backend/.env", "CONTRACT_ADDRESS", certAddr);
   setEnvValue("../../backend/.env", "SBT_CONTRACT_ADDRESS", sbtAddr);
+
+  // 5. Also upsert into MongoDB ContractConfig so the database remains authoritative
+  try {
+    const mongoose = require("../../backend/node_modules/mongoose");
+    const net = await hre.ethers.provider.getNetwork();
+    const chainId = Number(net.chainId);
+    const mongoUri = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/certificatesDB";
+    
+    await mongoose.connect(mongoUri);
+    const ContractConfig = mongoose.models.ContractConfig || mongoose.model(
+      "ContractConfig",
+      new mongoose.Schema(
+        {
+          _id: { type: String, required: true },
+          certAddress: { type: String, required: true },
+          sbtAddress: { type: String, required: true },
+          certTxHash: { type: String, default: null },
+          sbtTxHash: { type: String, default: null },
+          deployedBy: { type: String, default: "deploy-script" },
+          deployedAt: { type: Date, default: Date.now },
+          chainId: { type: Number, default: null },
+        },
+        { collection: "contractconfigs" }
+      )
+    );
+
+    const [deployerSigner] = await hre.ethers.getSigners();
+    const deployerAddress = deployerSigner ? await deployerSigner.getAddress() : "deploy-script";
+
+    await ContractConfig.findByIdAndUpdate(
+      chainId.toString(),
+      {
+        certAddress: certAddr,
+        sbtAddress: sbtAddr,
+        certTxHash: certificate.deploymentTransaction()?.hash || null,
+        sbtTxHash: sbt.deploymentTransaction()?.hash || null,
+        deployedBy: deployerAddress,
+        deployedAt: new Date(),
+        chainId: chainId,
+      },
+      { new: true, upsert: true }
+    );
+
+    console.log(`[deploy] Successfully synced ContractConfig in MongoDB for chainId ${chainId}`);
+    await mongoose.disconnect();
+  } catch (mongoErr) {
+    console.warn(`[deploy] Notice: Could not sync to MongoDB directly (${mongoErr.message}). .env was updated.`);
+  }
 }
 
 main().catch((error) => {

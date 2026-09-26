@@ -29,7 +29,21 @@ function IssueView({ showToast, wallet, contract }) {
 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [contractStatus, setContractStatus] = useState(null);
   const isMobile = window.innerWidth <= 768;
+
+  React.useEffect(() => {
+    const targetChainId = wallet.chainId || 11155111;
+    let cancelled = false;
+    api.get(`/api/contract/status?chainId=${targetChainId}`)
+      .then((res) => {
+        if (!cancelled) setContractStatus(res.data?.config || null);
+      })
+      .catch(() => {
+        if (!cancelled) setContractStatus(null);
+      });
+    return () => { cancelled = true; };
+  }, [wallet.chainId]);
 
   const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -122,13 +136,13 @@ function IssueView({ showToast, wallet, contract }) {
       showToast('Analyze the certificates first', 'warning');
       return;
     }
-    if (!wallet.isConnected) {
+    if (!wallet.isConnected || !wallet.chainId) {
       showToast('Connect your admin MetaMask wallet first (Issue view)', 'warning');
       return;
     }
 
     try {
-      await contract.getContractInfo(wallet.chainId);
+      await contract.getFreshContractInfo(wallet.chainId);
     } catch (e) {
       showToast(e.message, 'error');
       return;
@@ -214,13 +228,13 @@ function IssueView({ showToast, wallet, contract }) {
       showToast('Please upload a PDF certificate file!', 'warning');
       return;
     }
-    if (!wallet.isConnected) {
+    if (!wallet.isConnected || !wallet.chainId) {
       showToast('Connect your admin MetaMask wallet first (Issue view)', 'warning');
       return;
     }
 
     try {
-      await contract.getContractInfo(wallet.chainId);
+      await contract.getFreshContractInfo(wallet.chainId);
     } catch (e) {
       showToast(e.message, 'error');
       return;
@@ -321,6 +335,40 @@ function IssueView({ showToast, wallet, contract }) {
             <Layers size={14} /> Bulk Upload (PDFs)
           </button>
         </div>
+      </div>
+
+      {/* Target Network & Deployed Contract Info Bar */}
+      <div className="glass-panel" style={{ padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '10px', height: '10px', borderRadius: '50%',
+            background: contractStatus?.certAddress ? 'var(--accent-green)' : '#f59e0b',
+            boxShadow: `0 0 8px ${contractStatus?.certAddress ? 'var(--accent-green)' : '#f59e0b'}`
+          }} />
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Target Network: <strong>{NETWORKS[wallet.chainId]?.name || (wallet.chainId ? `Chain ${wallet.chainId}` : 'Sepolia (Chain 11155111)')}</strong></span>
+              {contractStatus?.certAddress && (
+                <span style={{ fontSize: '11px', background: 'rgba(16,185,129,0.15)', color: 'var(--accent-green)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                  LIVE CONTRACT
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: '2px' }}>
+              {contractStatus?.certAddress ? `Contract: ${contractStatus.certAddress}` : 'No contract deployed on this network — deploy in Admin panel first.'}
+            </div>
+          </div>
+        </div>
+        {contractStatus?.certAddress && (
+          <a
+            href={`${NETWORKS[wallet.chainId || 11155111]?.blockExplorerUrls?.[0] || 'https://sepolia.etherscan.io'}/address/${contractStatus.certAddress}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: '12px', color: 'var(--accent-cyan)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <ExternalLink size={13} /> View on Explorer
+          </a>
+        )}
       </div>
 
       {mode === 'single' ? (
